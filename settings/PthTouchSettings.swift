@@ -8,7 +8,8 @@ struct PthTouchSettingsApp: App {
         Window("PthTouch Settings", id: "settings") {
             SettingsView(model: model).onAppear { model.reload() }
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 640, height: 720)
         .commands { CommandGroup(replacing: .newItem) {} }
     }
 }
@@ -212,7 +213,8 @@ struct SettingsView: View {
                     .keyboardShortcut(.defaultAction).disabled(model.busy || !model.loaded)
             }
         }
-        .padding(20).frame(width: 550, height: 590)
+        .padding(20)
+        .frame(minWidth: 550, maxWidth: .infinity, minHeight: 520, maxHeight: .infinity)
     }
     private func number(_ title: String, value: Binding<Double>, unit: String) -> some View {
         HStack {

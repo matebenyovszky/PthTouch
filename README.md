@@ -43,7 +43,8 @@ Default options: tap-to-click and tap-and-drag enabled, natural scrolling enable
 Download **PthTouchSettings-macOS.zip** from the same release, unzip it, and move
 **PthTouch Settings.app** to Applications. The companion app supports Apple
 silicon and Intel on macOS 13 or newer. OpenTabletDriver must already be running
-with this output mode selected.
+with this output mode selected. The settings window can be resized; growing it
+shows more controls, while smaller windows keep the forms scrollable.
 
 The Pen, Touch & gestures, and Stability tabs expose sensitivity, pen-scroll
 mode/speed/direction, short-press middle clicking, tap/drag, scrolling, swipes,

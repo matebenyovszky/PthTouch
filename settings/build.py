@@ -15,7 +15,8 @@ app = args.output.resolve()
 contents = app / 'Contents'
 macos = contents / 'MacOS'
 macos.mkdir(parents=True, exist_ok=True)
-version = ET.parse(root / 'plugin' / 'PthTouch.csproj').find('.//Version').text
+settings_version = root / 'settings' / 'VERSION'
+version = settings_version.read_text().strip() if settings_version.exists() else ET.parse(root / 'plugin' / 'PthTouch.csproj').find('.//Version').text
 sources = [root / 'settings' / name for name in ['DaemonRPC.swift', 'SettingsCore.swift', 'PthTouchSettings.swift']]
 sdk = subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip()
 with tempfile.TemporaryDirectory(prefix='pth-settings-') as temporary:
