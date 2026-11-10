@@ -23,6 +23,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private bool reanchorPen;
     private Vector2? lastPenPosition;
     private bool touchDragging;
+    private bool upperPenButton;
 
     // Public for deterministic output tests; the host uses the native default.
     public ITouchClicker Clicker { get; set; } = new MacTouchClicker();
@@ -63,6 +64,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 penUntil = 0;
                 reanchorPen = true;
                 lastPenPosition = null;
+                upperPenButton = false;
             }
             else if (deviceReport is ITabletReport pen)
             {
@@ -73,6 +75,10 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                     touch.Reset();
                 }
                 penUntil = now + 0.15;
+                bool upper = pen.PenButtons.Length > 1 && pen.PenButtons[1];
+                bool scrollButtonChanged = upper != upperPenButton &&
+                    Elements.Any(element => element.GetType().FullName == "ScrollBinding.ScrollBindingFilter");
+                upperPenButton = upper;
                 Vector2 position = pen.Position;
                 bool farHover = LimitUnstableHover && deviceReport is IProximityReport { NearProximity: false } &&
                     pen.Pressure == 0 && !pen.PenButtons.Any(x => x);
@@ -95,7 +101,10 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
 
                 if (!farHover)
                     lastPenPosition = position;
-                reanchorPen = farHover;
+                // The optional Pen Scroll binding runs after transformation.
+                // Its freeze starts/ends on the following packet, so reanchor
+                // that next packet rather than the button-transition packet.
+                reanchorPen = farHover || scrollButtonChanged;
                 return;
             }
 

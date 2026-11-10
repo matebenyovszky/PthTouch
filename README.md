@@ -31,6 +31,10 @@ Disable other touch/gesture filters and output modes for this tablet to avoid du
 
 Default options: tap-to-click and tap-and-drag enabled, natural scrolling enabled, touch scrolling 12 px/mm, unstable-hover limiting enabled. Taps must finish within 300 ms and move no more than 1 mm. Two-finger scrolling begins after 1 mm of movement. Multi-click timing follows the macOS system setting.
 
+## Optional pen-button scrolling
+
+The separate [Scroll Bindings](https://github.com/Mrcubix/Scroll-Bindings) plugin can bind an upper pen button to **Pen Scroll**. Enable its **Scroll Binding Filter**, choose a zero pressure threshold for hover scrolling, and enable Freeze Cursor. This output mode reanchors after the upper button changes state so relative movement resumes without a cursor jump. Kinetic scrolling can be disabled for an immediate stop on release.
+
 ## Build and checks
 
 Requires the .NET 10 SDK:
@@ -42,7 +46,7 @@ dotnet run --project checks/Checks.csproj -c Release
 
 The plugin DLL is `plugin/bin/Release/net10.0/PthTouch.dll`. Place only that DLL at the top level of the distribution ZIP. Do not bundle OpenTabletDriver assemblies.
 
-Checks exercise touch transitions, stationary contacts, scroll/tap separation, left/right tap dispatch, native double-click sequencing, tap-and-drag and release/cancellation, pen proximity suppression, far-hover release preservation and re-entry without a cursor jump. They use fake pointers/click sinks and do not generate native UI events, so they also run on Linux CI.
+Checks exercise touch transitions, stationary contacts, scroll/tap separation, left/right tap dispatch, native double-click sequencing, tap-and-drag and release/cancellation, pen proximity suppression, frozen pen-scroll transitions, far-hover release preservation and re-entry without a cursor jump. They use fake pointers/click sinks and do not generate native UI events, so they also run on Linux CI.
 
 ## Limitations
 

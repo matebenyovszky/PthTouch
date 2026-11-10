@@ -211,7 +211,30 @@ dragMode.Dispose();
 Check(dragSink.DragEnds == endsBeforeDispose + 1,
     "Switching/unloading the output mode must release an active drag");
 
-Console.WriteLine($"Passed {checks} touch, tap, drag, hover and pointer-output checks.");
+var scrollPointer = new RecordingPointer();
+var scrollMode = new TrackpadRelativeMode
+{
+    Pointer = scrollPointer, Clicker = sink, Sensitivity = new(20),
+    ResetTime = TimeSpan.FromMilliseconds(100),
+    Elements = [new ScrollBinding.ScrollBindingFilter()]
+};
+PenReport ScrollPen(float x, bool pressed) => new(new(x, 1000), true)
+    { PenButtons = [false, pressed] };
+scrollMode.Read(ScrollPen(1000, false));
+scrollMode.Read(ScrollPen(1001, true));
+scrollMode.Read(ScrollPen(1400, true));
+Check(scrollPointer.LastPosition == Vector2.Zero, "Starting frozen pen scroll must not jump");
+scrollMode.Read(ScrollPen(1600, true));
+Check(scrollPointer.LastPosition == Vector2.Zero, "Frozen pen scroll must keep the cursor in place");
+scrollMode.Read(ScrollPen(1600, false));
+Check(scrollPointer.LastPosition == Vector2.Zero, "Releasing pen scroll must not move the cursor");
+scrollMode.Read(ScrollPen(1601, false));
+Check(scrollPointer.LastPosition == Vector2.Zero, "The first unfrozen report must establish a new origin");
+scrollMode.Read(ScrollPen(1602, false));
+Check(Vector2.Distance(scrollPointer.LastPosition, new(.2f, 0)) < .001,
+    "Ordinary relative motion must resume from the new pen position");
+
+Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
 {
