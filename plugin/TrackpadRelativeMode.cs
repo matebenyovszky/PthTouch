@@ -26,12 +26,16 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private bool upperPenButton;
     private bool magnifying;
     private readonly HoverDeadband hoverDeadband = new();
+    private readonly PenButtonTap penButtonTap = new();
 
     // Public for deterministic output tests; the host uses the native default.
     public ITouchClicker Clicker { get; set; } = new MacTouchClicker();
 
     [Resolved]
     public override IRelativePointer? Pointer { get; set; }
+
+    [BooleanProperty("Upper pen button tap = middle click", ""), DefaultPropertyValue(false)]
+    public bool UpperButtonTapMiddleClick { get; set; }
 
     [Property("Touch scroll sensitivity"), DefaultPropertyValue(12f), Unit("px/mm")]
     public float ScrollSensitivity { get; set; } = 12f;
@@ -79,6 +83,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 reanchorPen = true;
                 lastPenPosition = null;
                 upperPenButton = false;
+                penButtonTap.Reset();
                 hoverDeadband.Reset();
             }
             else if (deviceReport is ITabletReport pen)
@@ -103,6 +108,10 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 Vector2 mmPerUnit = new(
                     (digitizer?.Width ?? 325.12f) / (digitizer?.MaxX ?? 65024),
                     (digitizer?.Height ?? 203.2f) / (digitizer?.MaxY ?? 40640));
+                bool middleClick = penButtonTap.Update(pen.Position, mmPerUnit, upper,
+                    pen.PenButtons.Length > 0 && pen.PenButtons[0], pen.Pressure, now,
+                    UpperButtonTapMiddleClick && Elements.Any(element =>
+                        element.GetType().FullName == "ScrollBinding.ScrollBindingFilter"));
                 pen.Position = hoverDeadband.Filter(pen.Position, mmPerUnit,
                     Math.Clamp(HoverJitterDeadband, 0, 1),
                     !farHover && pen.Pressure == 0 && !pen.PenButtons.Any(x => x),
@@ -125,6 +134,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 else
                     base.Read(deviceReport);
 
+                if (middleClick)
+                    Clicker.Click(TapButton.Middle, now);
                 if (!farHover)
                     lastPenPosition = position;
                 // The optional Pen Scroll binding runs after transformation.

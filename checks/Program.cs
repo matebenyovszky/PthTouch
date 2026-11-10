@@ -409,6 +409,40 @@ foreach (var (direction, key) in new[] {
         "System swipes must match macOS Control+Arrow symbolic shortcuts, including the function-key bit");
 }
 
+var penTap = new PenButtonTap();
+bool PenTap(float x, bool down, double time, uint pressure = 0, bool other = false, bool enabled = true) =>
+    penTap.Update(new(x, 1000), new(.005f), down, other, pressure, time, enabled);
+Check(!PenTap(1000, true, 0), "Upper-button down must defer the middle click");
+Check(!PenTap(1004, true, .1), "Tiny hover noise while holding the button must not click");
+Check(PenTap(1002, false, .2), "A short stationary upper-button release must middle-click");
+Check(!PenTap(1002, false, .21), "Idle button-up packets must not repeat a middle click");
+PenTap(1000, true, 1); PenTap(1100, true, 1.1);
+Check(!PenTap(1000, false, 1.2), "A scroll that returns to its origin must never middle-click");
+PenTap(1000, true, 2);
+Check(!PenTap(1100, false, 2.1), "Movement on the release packet must cancel a middle click");
+PenTap(1000, true, 3);
+Check(!PenTap(1000, false, 3.6), "A long stationary hold must not accidentally open a link");
+PenTap(1000, true, 4, pressure: 1);
+Check(!PenTap(1000, false, 4.1), "Tip pressure must cancel a middle click");
+PenTap(1000, true, 5); PenTap(1000, true, 5.01, other: true);
+Check(!PenTap(1000, false, 5.1), "Using another pen button must cancel a middle click");
+PenTap(1000, true, 6); penTap.Reset();
+Check(!PenTap(1000, false, 6.1), "Proximity loss must discard a pending middle click");
+PenTap(1000, true, 7);
+Check(!PenTap(1000, false, 7.1, enabled: false), "Disabling middle-tap must cancel pending input");
+var middleSink = new RecordingClicker();
+var middleMode = new TrackpadRelativeMode { Pointer = new RecordingPointer(), Clicker = middleSink,
+    Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100),
+    Elements = [new ScrollBinding.ScrollBindingFilter()], UpperButtonTapMiddleClick = true };
+middleMode.Read(ScrollPen(1000, false));
+middleMode.Read(ScrollPen(1000, true));
+middleMode.Read(ScrollPen(1000, false));
+Check(middleSink.Buttons.SequenceEqual(new[] { TapButton.Middle }),
+    "The actual output mode must emit a middle click only after the upper button is released");
+middleMode.Read(ScrollPen(1000, true)); middleMode.Read(ScrollPen(1100, true));
+middleMode.Read(ScrollPen(1000, false));
+Check(middleSink.Buttons.Count == 1, "Actual pen scrolling must never append a middle click");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport

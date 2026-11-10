@@ -88,14 +88,15 @@ public sealed class MacTouchClicker : ITouchClicker
         var position = CGEventGetLocation(probe);
         CFRelease(probe);
         bool right = button == TapButton.Right;
-        uint mouseButton = right ? 1u : 0u;
+        bool middle = button == TapButton.Middle;
+        uint mouseButton = middle ? 2u : right ? 1u : 0u;
         int clicks = sequence.Next(button, now, new Vector2((float)position.X, (float)position.Y),
             DoubleClickInterval);
         IntPtr down = CGEventCreateMouseEvent(IntPtr.Zero,
-            right ? 3u : 1u,
+            middle ? 25u : right ? 3u : 1u,
             position, mouseButton);
         IntPtr up = CGEventCreateMouseEvent(IntPtr.Zero,
-            right ? 4u : 2u,
+            middle ? 26u : right ? 4u : 2u,
             position, mouseButton);
         IntPtr pool = objc_autoreleasePoolPush();
         try

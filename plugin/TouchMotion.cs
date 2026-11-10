@@ -3,7 +3,7 @@ using System.Numerics;
 namespace PthTouch;
 
 public readonly record struct Contact(byte Id, Vector2 Position);
-public enum TapButton { None, Left, Right }
+public enum TapButton { None, Left, Right, Middle }
 public enum DragChange { None, Start, End }
 public readonly record struct Motion(Vector2 Cursor, Vector2 Scroll,
     TapButton Tap = TapButton.None, DragChange Drag = DragChange.None,

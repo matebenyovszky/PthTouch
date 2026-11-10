@@ -2,3 +2,4 @@
 **/obj/
 *.zip
 .DS_Store
+dist/
