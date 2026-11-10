@@ -10,6 +10,8 @@ A macOS output-mode plugin for OpenTabletDriver that combines relative pen input
 - Moving, scrolling, long holds and palm contacts do not turn into taps.
 - After scrolling, all fingers must lift before one-finger cursor movement resumes.
 - Touch is suppressed near the pen, including accidental contacts that began while the pen was present.
+- Optional three-finger swipes switch Spaces/full-screen apps horizontally, open Mission Control upward, and show the current application's windows downward. These are discrete shortcut-triggered actions, not interactive trackpad animations.
+- Optional experimental two-finger pinch sends native magnification events to compatible apps, separate from two-finger scrolling.
 - Optional near-proximity gating suppresses unreliable far-hover coordinates while preserving pen/button releases. Re-entry establishes a fresh relative origin.
 - Optional three-report median spike rejection removes isolated hover outliers before the deadband. It delays small continuous hover movement by one report (about 5 ms at 200 Hz); movements larger than four times the deadband bypass it immediately. Contact and side buttons bypass both filters. The option defaults to off.
 - An opt-in spatial hover deadband suppresses tiny stationary jitter without temporal averaging. Pen pressure and side-button use bypass it; the setting defaults to 0 mm (off). For stationary PTH-851 noise, a 0.10 mm deadband with spike rejection worked well in a 30-second replay at 20 px/mm; results depend on hardware and environment. Without spike rejection, a 0.04 mm threshold corresponds to 0.8 px at 20 px/mm.
@@ -33,6 +35,24 @@ Disable other touch/gesture filters and output modes for this tablet to avoid du
 
 Default options: tap-to-click and tap-and-drag enabled, natural scrolling enabled, touch scrolling 12 px/mm, unstable-hover limiting enabled. Taps must finish within 300 ms and move no more than 1 mm. Two-finger scrolling begins after 1 mm of movement. Multi-click timing follows the macOS system setting.
 
+## Optional system swipes and pinch zoom
+
+Enable **Three-finger system swipes** and/or **Pinch zoom (experimental)** in the
+output-mode options. Both are off by default. Three fingers must travel together
+at least 6 mm in a clear direction; one gesture triggers one action, and all
+fingers must lift before a new gesture. Horizontal finger motion follows the
+trackpad content convention: fingers left reveal the Space on the right.
+The actions use Control+Arrow shortcuts, which must be enabled in macOS.
+They do not provide an interactive, finger-following Mission Control animation.
+
+A two-finger contact locks to scroll or pinch based on centroid travel versus
+finger separation. A pinch sends began/changed/ended/cancelled magnify events;
+partial lifts, contact-ID changes, palm contacts, pen takeover and unloading
+cancel safely. Existing two-finger taps still right-click. Pinch works in apps
+that accept native magnification events; app support varies. It uses undocumented
+CoreGraphics gesture fields and may need changes after macOS updates. No private
+framework is loaded, and no additional permission is requested.
+
 ## Optional pen-button scrolling
 
 The separate [Scroll Bindings](https://github.com/Mrcubix/Scroll-Bindings) plugin can bind an upper pen button to **Pen Scroll**. Enable its **Scroll Binding Filter**, choose a zero pressure threshold for hover scrolling, and enable Freeze Cursor. This output mode reanchors after the upper button changes state so relative movement resumes without a cursor jump. Kinetic scrolling can be disabled for an immediate stop on release.
@@ -48,11 +68,13 @@ dotnet run --project checks/Checks.csproj -c Release
 
 The plugin DLL is `plugin/bin/Release/net10.0/PthTouch.dll`. Place only that DLL at the top level of the distribution ZIP. Do not bundle OpenTabletDriver assemblies.
 
+Checks also cover all four system swipe directions, asynchronous finger touchdown, pinch/scroll locking, magnification lifecycle/cancellation and correct Control+Function+Arrow event flags. The macOS-only check constructs magnify envelopes and verifies their NSEvent type/phase/value without posting UI events.
+
 Checks exercise touch transitions, stationary contacts, scroll/tap separation, left/right tap dispatch, native double-click sequencing, tap-and-drag and release/cancellation, pen proximity suppression, frozen pen-scroll transitions, spatial hover hysteresis, far-hover release preservation and re-entry without a cursor jump. They use fake pointers/click sinks and do not generate native UI events, so they also run on Linux CI.
 
 ## Limitations
 
-No pinch, rotate, three-finger gestures, momentum scrolling or drag lock. Near-proximity limiting only acts on devices that report the Wacom proximity flag; it is not a general interference filter. The pointer pauses in the far, unreliable hover range by design.
+No rotation, momentum scrolling or drag lock. Three-finger actions use discrete keyboard shortcuts; native pinch injection is experimental. Near-proximity limiting only acts on devices that report the Wacom proximity flag; it is not a general interference filter. The pointer pauses in the far, unreliable hover range by design.
 
 ## License
 

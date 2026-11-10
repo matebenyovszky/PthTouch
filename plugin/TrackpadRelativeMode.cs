@@ -24,6 +24,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private Vector2? lastPenPosition;
     private bool touchDragging;
     private bool upperPenButton;
+    private bool magnifying;
     private readonly HoverDeadband hoverDeadband = new();
 
     // Public for deterministic output tests; the host uses the native default.
@@ -34,6 +35,12 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
 
     [Property("Touch scroll sensitivity"), DefaultPropertyValue(12f), Unit("px/mm")]
     public float ScrollSensitivity { get; set; } = 12f;
+
+    [BooleanProperty("Three-finger system swipes", ""), DefaultPropertyValue(false)]
+    public bool ThreeFingerSwipes { get; set; }
+
+    [BooleanProperty("Pinch zoom (experimental)", ""), DefaultPropertyValue(false)]
+    public bool PinchZoom { get; set; }
 
     [BooleanProperty("Natural scrolling", ""), DefaultPropertyValue(true)]
     public bool NaturalScrolling { get; set; } = true;
@@ -76,6 +83,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             }
             else if (deviceReport is ITabletReport pen)
             {
+                EndMagnification();
                 if (touchDragging)
                 {
                     Clicker.EndDrag();
@@ -150,7 +158,15 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             (specs?.Height ?? 203.2f) / (specs?.MaxY ?? 4095));
         Motion action = touch.Update(contacts[..count], now, mmPerUnit,
             Sensitivity, Math.Clamp(ScrollSensitivity, 0.1f, 100f), now < penUntil,
-            TapAndDrag && TapToClick, Clicker.DoubleClickInterval);
+            TapAndDrag && TapToClick, Clicker.DoubleClickInterval, ThreeFingerSwipes, PinchZoom);
+
+        if (action.Magnify != MagnifyPhase.None)
+        {
+            Clicker.Magnify(action.Magnification, action.Magnify);
+            magnifying = action.Magnify is MagnifyPhase.Began or MagnifyPhase.Changed;
+        }
+        if (action.Swipe != SwipeDirection.None)
+            Clicker.Swipe(action.Swipe);
 
         if (Pointer is null)
             return;
@@ -208,10 +224,19 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             (Pointer as ISynchronousPointer)?.Flush();
     }
 
+    private void EndMagnification()
+    {
+        if (!magnifying) return;
+        Clicker.Magnify(0, MagnifyPhase.Cancelled);
+        magnifying = false;
+        touch.Reset();
+    }
+
     protected override void Dispose(bool disposing)
     {
         lock (sync)
         {
+            EndMagnification();
             if (touchDragging)
                 Clicker.EndDrag();
             touchDragging = false;

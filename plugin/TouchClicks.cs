@@ -3,6 +3,15 @@ using System.Runtime.InteropServices;
 
 namespace PthTouch;
 
+public readonly record struct SwipeShortcut(ushort Key, ulong Flags)
+{
+    public static SwipeShortcut For(SwipeDirection direction) => new(direction switch
+    {
+        SwipeDirection.Left => 124, SwipeDirection.Right => 123,
+        SwipeDirection.Up => 126, SwipeDirection.Down => 125, _ => 0
+    }, (1UL << 18) | (1UL << 23)); // Control + function-key classification for arrows
+}
+
 public interface ITouchClicker
 {
     void Click(TapButton button, double now);
@@ -10,6 +19,8 @@ public interface ITouchClicker
     void BeginDrag(double now);
     void MoveDrag(Vector2 delta);
     void EndDrag();
+    void Swipe(SwipeDirection direction) { }
+    void Magnify(float amount, MagnifyPhase phase) { }
 }
 
 public sealed class ClickSequence
@@ -51,6 +62,10 @@ public sealed class MacTouchClicker : ITouchClicker
 
     [DllImport(Quartz)] private static extern IntPtr CGEventCreate(IntPtr source);
     [DllImport(Quartz)] private static extern Point CGEventGetLocation(IntPtr ev);
+    [DllImport(Quartz)] private static extern void CGEventSetType(IntPtr ev, uint type);
+    [DllImport(Quartz)] private static extern void CGEventSetLocation(IntPtr ev, Point position);
+    [DllImport(Quartz)] private static extern void CGEventSetDoubleValueField(IntPtr ev, uint field, double value);
+    [DllImport(Quartz)] private static extern IntPtr CGEventCreateKeyboardEvent(IntPtr source, ushort key, [MarshalAs(UnmanagedType.I1)] bool down);
     [DllImport(Quartz)] private static extern IntPtr CGEventCreateMouseEvent(IntPtr source, uint type, Point point, uint button);
     [DllImport(Quartz)] private static extern void CGEventSetIntegerValueField(IntPtr ev, uint field, long value);
     [DllImport(Quartz)] private static extern void CGEventSetFlags(IntPtr ev, ulong flags);
@@ -98,6 +113,70 @@ public sealed class MacTouchClicker : ITouchClicker
         {
             if (down != IntPtr.Zero) CFRelease(down);
             if (up != IntPtr.Zero) CFRelease(up);
+            objc_autoreleasePoolPop(pool);
+        }
+    }
+
+    public void Swipe(SwipeDirection direction)
+    {
+        if (!OperatingSystem.IsMacOS() || direction == SwipeDirection.None) return;
+        // Match trackpad content motion: fingers left reveal the Space to
+        // the right. Keyboard shortcuts give discrete, reliable transitions.
+        var shortcut = SwipeShortcut.For(direction);
+        IntPtr pool = objc_autoreleasePoolPush();
+        try
+        {
+            foreach (bool down in new[] { true, false })
+            {
+                IntPtr ev = CGEventCreateKeyboardEvent(IntPtr.Zero, shortcut.Key, down);
+                if (ev == IntPtr.Zero) continue;
+                try
+                {
+                    // Arrow-key symbolic shortcuts include the function-key bit.
+                    // Omitting it produces valid key events that macOS ignores
+                    // for Control+Arrow Mission Control / Space actions.
+                    CGEventSetFlags(ev, shortcut.Flags);
+                    CGEventPost(0, ev);
+                }
+                finally { CFRelease(ev); }
+            }
+        }
+        finally { objc_autoreleasePoolPop(pool); }
+    }
+
+    public void Magnify(float amount, MagnifyPhase phase)
+    {
+        if (!OperatingSystem.IsMacOS() || phase == MagnifyPhase.None || !float.IsFinite(amount)) return;
+        // macOS has no documented global magnify-event constructor. These
+        // protocol fields are opt-in and tested by converting a constructed
+        // CGEvent to NSEvent on macOS 26, without posting a test UI event.
+        if (phase == MagnifyPhase.Began)
+        {
+            PostMagnification(0, MagnifyPhase.Began);
+            if (amount != 0) PostMagnification(amount, MagnifyPhase.Changed);
+        }
+        else
+            PostMagnification(amount, phase);
+    }
+
+    private static void PostMagnification(float amount, MagnifyPhase phase)
+    {
+        IntPtr pool = objc_autoreleasePoolPush();
+        IntPtr ev = CGEventCreate(IntPtr.Zero);
+        try
+        {
+            if (ev == IntPtr.Zero) return;
+            CGEventSetType(ev, 29); // generic gesture envelope
+            CGEventSetIntegerValueField(ev, 110, 8); // zoom subtype
+            CGEventSetIntegerValueField(ev, 132, (long)phase);
+            CGEventSetDoubleValueField(ev, 113, amount);
+            CGEventSetLocation(ev, CurrentPosition());
+            CGEventSetFlags(ev, CGEventSourceFlagsState(0));
+            CGEventPost(0, ev);
+        }
+        finally
+        {
+            if (ev != IntPtr.Zero) CFRelease(ev);
             objc_autoreleasePoolPop(pool);
         }
     }

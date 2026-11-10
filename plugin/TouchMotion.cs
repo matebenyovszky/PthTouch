@@ -6,12 +6,15 @@ public readonly record struct Contact(byte Id, Vector2 Position);
 public enum TapButton { None, Left, Right }
 public enum DragChange { None, Start, End }
 public readonly record struct Motion(Vector2 Cursor, Vector2 Scroll,
-    TapButton Tap = TapButton.None, DragChange Drag = DragChange.None);
+    TapButton Tap = TapButton.None, DragChange Drag = DragChange.None,
+    SwipeDirection Swipe = SwipeDirection.None, float Magnification = 0,
+    MagnifyPhase Magnify = MagnifyPhase.None);
 
 // A contact snapshot is supplied by OTD's Wacom parser. No timers or delayed
 // scroll actions are used: every output comes from an actual coordinate delta.
 public sealed class TouchMotion
 {
+    private readonly TouchGestures gestures = new();
     private Vector2? lastPosition;
     private int lastSignature = -1;
     private double lastTime;
@@ -27,6 +30,7 @@ public sealed class TouchMotion
 
     public void Reset()
     {
+        gestures.Reset();
         lastPosition = null;
         lastSignature = -1;
         multipleContacts = false;
@@ -44,14 +48,16 @@ public sealed class TouchMotion
 
     public Motion Update(ReadOnlySpan<Contact> contacts, double now,
         Vector2 mmPerUnit, Vector2 cursorPixelsPerMm, float scrollPixelsPerMm,
-        bool penNearby = false, bool tapAndDrag = true, double doubleClickInterval = 0.5)
+        bool penNearby = false, bool tapAndDrag = true, double doubleClickInterval = 0.5,
+        bool threeFingerSwipes = false, bool pinchZoom = false)
     {
         if (penNearby)
         {
             bool endDrag = dragging;
+            MagnifyPhase phase = gestures.Cancel();
             Reset();
             ignoreUntilLift = contacts.Length > 0;
-            return new Motion(Vector2.Zero, Vector2.Zero, Drag: endDrag ? DragChange.End : DragChange.None);
+            return new Motion(Vector2.Zero, Vector2.Zero, Drag: endDrag ? DragChange.End : DragChange.None, Magnify: phase);
         }
         if (contacts.Length == 0)
         {
@@ -59,6 +65,7 @@ public sealed class TouchMotion
             if (!gestureActive && !ignoreUntilLift)
                 return default;
             bool endDrag = dragging;
+            var endGesture = gestures.Update(contacts, now, mmPerUnit, threeFingerSwipes, pinchZoom);
             TapButton tap = !endDrag && !ignoreUntilLift && gestureActive && tapEligible &&
                 now - gestureStart <= 0.30
                 ? maximumContacts switch { 1 => TapButton.Left, 2 => TapButton.Right, _ => TapButton.None }
@@ -66,7 +73,8 @@ public sealed class TouchMotion
             Reset();
             if (tap == TapButton.Left)
                 lastSingleTap = now;
-            return new Motion(Vector2.Zero, Vector2.Zero, tap, endDrag ? DragChange.End : DragChange.None);
+            return new Motion(Vector2.Zero, Vector2.Zero, tap, endDrag ? DragChange.End : DragChange.None,
+                Magnify: endGesture.Magnify);
         }
         if (ignoreUntilLift)
             return default;
@@ -94,19 +102,35 @@ public sealed class TouchMotion
                 !float.IsFinite(contact.Position.Y))
             {
                 bool endDrag = dragging;
+                var phase = gestures.Cancel();
                 Reset();
                 ignoreUntilLift = true;
-                return new Motion(Vector2.Zero, Vector2.Zero, Drag: endDrag ? DragChange.End : DragChange.None);
+                return new Motion(Vector2.Zero, Vector2.Zero, Drag: endDrag ? DragChange.End : DragChange.None,
+                    Magnify: phase);
             }
             tapOrigins[contact.Id] ??= contact.Position;
             if (((contact.Position - tapOrigins[contact.Id]!.Value) * mmPerUnit).Length() > 1.0f)
                 tapEligible = false;
         }
 
+        var advanced = gestures.Update(contacts, now, mmPerUnit, threeFingerSwipes, pinchZoom);
+        if (advanced.Captured)
+        {
+            // Pending two-finger touches can still be taps; captured pinch,
+            // swipe and palm sessions cannot turn into clicks or scrolling.
+            tapEligible = false;
+            dragCandidate = false;
+            multipleContacts = contacts.Length >= 2 || multipleContacts;
+            lastPosition = null;
+            lastSignature = -1;
+            return new Motion(Vector2.Zero, Vector2.Zero, Swipe: advanced.Swipe,
+                Magnification: advanced.Magnification, Magnify: advanced.Magnify);
+        }
+
         if (contacts.Length >= 2)
             multipleContacts = true;
 
-        // Palm/three-finger input is ignored. After scrolling, require a full
+        // Palm/disabled three-finger input is ignored. After scrolling, require a full
         // lift before the remaining single finger can move the cursor.
         if (contacts.Length > 2 || (contacts.Length == 1 && multipleContacts))
         {

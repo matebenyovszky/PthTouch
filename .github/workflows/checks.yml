@@ -11,3 +11,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet run --project checks/Checks.csproj -c Release
+  native-magnify:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swiftc -framework AppKit checks/MagnifyEventCheck.swift -o /tmp/pth-magnify-check
+      - run: /tmp/pth-magnify-check

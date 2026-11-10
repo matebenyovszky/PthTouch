@@ -280,7 +280,136 @@ Check(Spike(1030) == new Vector2(1025, 1000), "Small deliberate motion must resu
 spikes.Reset();
 Check(Spike(3000) == new Vector2(3000, 1000), "Re-entry must discard median history");
 
-Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover and pointer-output checks.");
+Motion Gesture(TouchMotion state, double time, params Contact[] contacts) =>
+    state.Update(contacts, time, Vector2.One, new(20), 12,
+        threeFingerSwipes: true, pinchZoom: true);
+Contact[] Three(float x, float y) => [Finger(0, x, y), Finger(1, x + 10, y), Finger(2, x + 20, y)];
+foreach (var (delta, direction) in new[] {
+    (new Vector2(-7, 0), SwipeDirection.Left), (new Vector2(7, 0), SwipeDirection.Right),
+    (new Vector2(0, -7), SwipeDirection.Up), (new Vector2(0, 7), SwipeDirection.Down) })
+{
+    var swipe = new TouchMotion();
+    Check(Gesture(swipe, 0, Three(100, 100)) == default, "Three-finger touchdown must not act");
+    var action = Gesture(swipe, .01, Three(100 + delta.X, 100 + delta.Y));
+    Check(action.Swipe == direction && action.Cursor == Vector2.Zero && action.Scroll == Vector2.Zero,
+        "Each three-finger direction must emit its action without cursor movement or scroll");
+    Check(Gesture(swipe, .02, Three(100 + delta.X * 2, 100 + delta.Y * 2)) == default,
+        "A three-finger session must fire only once");
+    Check(Gesture(swipe, .03, Finger(0, 100, 100), Finger(1, 110, 100)) == default,
+        "Partially lifting a swipe must not turn it into scrolling");
+    Check(Gesture(swipe, .04, Finger(0, 110, 110)) == default,
+        "A remaining swipe finger must not move the pointer");
+    Check(Gesture(swipe, .05) == default, "Ending a swipe must not click");
+}
+var coherent = new TouchMotion();
+Gesture(coherent, 0, Three(100, 100));
+Check(Gesture(coherent, .01, Finger(0, 124, 100), Finger(1, 110, 100), Finger(2, 120, 100)).Swipe == SwipeDirection.None,
+    "One moving finger plus two stationary fingers must not trigger a swipe");
+var palm = new TouchMotion();
+Gesture(palm, 0, Finger(0, 100, 100), Finger(1, 110, 100), Finger(2, 120, 100), Finger(3, 130, 100));
+Check(Gesture(palm, .01, Three(110, 100)) == default && Gesture(palm, .02, Three(120, 100)) == default,
+    "A palm reduced to three contacts must remain suppressed until a full lift");
+var diagonal = new TouchMotion();
+Gesture(diagonal, 0, Three(100, 100));
+Check(Gesture(diagonal, .01, Three(107, 107)).Swipe == SwipeDirection.None,
+    "Ambiguous diagonal swipes must wait for a dominant direction");
+
+var pinch = new TouchMotion();
+Gesture(pinch, 0, Finger(0, 100, 100), Finger(1, 120, 100));
+var startPinch = Gesture(pinch, .01, Finger(0, 99, 100), Finger(1, 121, 100));
+Check(startPinch.Magnify == MagnifyPhase.Began && MathF.Abs(startPinch.Magnification - .1f) < .001 &&
+    startPinch.Scroll == Vector2.Zero && startPinch.Cursor == Vector2.Zero,
+    "Finger spreading must begin a real magnification without scroll or cursor output");
+var zoomOut = Gesture(pinch, .02, Finger(1, 120, 100), Finger(0, 100, 100));
+Check(zoomOut.Magnify == MagnifyPhase.Changed && zoomOut.Magnification < 0,
+    "Pinching back together must zoom out even if contact order changes");
+Check(Gesture(pinch, .03, Finger(0, 100, 103), Finger(1, 120, 103)).Scroll == Vector2.Zero,
+    "A classified pinch must never turn into scrolling");
+Check(Gesture(pinch, .04).Magnify == MagnifyPhase.Ended,
+    "Lifting a pinch must emit exactly one ended phase");
+Check(Gesture(pinch, .05) == default, "Idle reports must not repeat the pinch end");
+Gesture(pinch, 1, Finger(0, 100, 100), Finger(1, 120, 100));
+Gesture(pinch, 1.01, Finger(0, 99, 100), Finger(1, 121, 100));
+Check(Gesture(pinch, 1.02, Finger(0, 99, 100)).Magnify == MagnifyPhase.Cancelled,
+    "Partial pinch lift must cancel magnification");
+Check(Gesture(pinch, 1.03, Finger(0, 110, 110)) == default,
+    "A remaining pinch finger must stay suppressed");
+Gesture(pinch, 1.04);
+Gesture(pinch, 2, Finger(0, 100, 100), Finger(1, 120, 100));
+Gesture(pinch, 2.01, Finger(0, 99, 100), Finger(1, 121, 100));
+Check(pinch.Update([Finger(0, 99, 100), Finger(1, 121, 100)], 2.02, Vector2.One, new(20), 12,
+    penNearby: true, threeFingerSwipes: true, pinchZoom: true).Magnify == MagnifyPhase.Cancelled,
+    "Pen takeover must cancel a live magnification");
+var scrollLock = new TouchMotion();
+Gesture(scrollLock, 0, Finger(0, 100, 100), Finger(1, 120, 100));
+Check(Gesture(scrollLock, .01, Finger(0, 100, 102), Finger(1, 120, 102)).Scroll.Y > 0,
+    "Two fingers travelling together must preserve ordinary scrolling");
+Check(Gesture(scrollLock, .02, Finger(0, 98, 102), Finger(1, 122, 102)).Magnify == MagnifyPhase.None,
+    "A classified scroll must never turn into zoom midway through the contact");
+var pinchTap = new TouchMotion();
+Gesture(pinchTap, 0, Finger(0, 100, 100), Finger(1, 120, 100));
+Check(Gesture(pinchTap, .05).Tap == TapButton.Right,
+    "Enabling pinch must preserve a stationary two-finger right tap");
+var pinchSink = new RecordingClicker();
+var pinchPointer = new RecordingPointer();
+var pinchMode = new TrackpadRelativeMode { Pointer = pinchPointer, Clicker = pinchSink,
+    Sensitivity = new(20), ThreeFingerSwipes = true, PinchZoom = true };
+pinchMode.Read(new TouchReport([Point(0, 1000, 1000), Point(1, 2000, 1000)]));
+pinchMode.Read(new TouchReport([Point(0, 980, 1000), Point(1, 2020, 1000)]));
+Check(pinchSink.Magnifications.Count == 1 && pinchSink.Magnifications[0] == MagnifyPhase.Began &&
+    pinchPointer.Moves == 0 && pinchPointer.Scrolls == 0,
+    "The actual output mode must dispatch magnify through the native sink only");
+pinchMode.Dispose();
+Check(pinchSink.Magnifications.Last() == MagnifyPhase.Cancelled,
+    "Unloading the output mode must cancel a native magnification");
+var swipeSink = new RecordingClicker();
+var swipeMode = new TrackpadRelativeMode { Pointer = new RecordingPointer(), Clicker = swipeSink,
+    Sensitivity = new(20), ThreeFingerSwipes = true };
+swipeMode.Read(new TouchReport([Point(0, 1000, 1000), Point(1, 1200, 1000), Point(2, 1400, 1000)]));
+swipeMode.Read(new TouchReport([Point(0, 900, 1000), Point(1, 1100, 1000), Point(2, 1300, 1000)]));
+Check(swipeSink.Swipes.SequenceEqual(new[] { SwipeDirection.Left }),
+    "The actual output mode must dispatch a three-finger system swipe");
+
+var pausedSwipe = new TouchMotion();
+Gesture(pausedSwipe, 0, Three(100, 100));
+Check(Gesture(pausedSwipe, .3, Three(100, 100)) == default,
+    "A paused stationary swipe must reanchor without output");
+Check(Gesture(pausedSwipe, .31, Three(107, 100)).Swipe == SwipeDirection.Right,
+    "A swipe must still work after a stationary pause");
+var cancelledPinch = new TouchMotion();
+Gesture(cancelledPinch, 0, Finger(0, 100, 100), Finger(1, 120, 100));
+Gesture(cancelledPinch, .01, Finger(0, 99, 100), Finger(1, 121, 100));
+Check(Gesture(cancelledPinch, .02, Finger(0, 99, 100), Finger(2, 121, 100)).Magnify == MagnifyPhase.Cancelled,
+    "Changing pinch contact IDs must cancel rather than jump the scale");
+var invalidPinch = new TouchMotion();
+Gesture(invalidPinch, 0, Finger(0, 100, 100), Finger(1, 120, 100));
+Gesture(invalidPinch, .01, Finger(0, 99, 100), Finger(1, 121, 100));
+Check(Gesture(invalidPinch, .02, Finger(0, float.NaN, 100), Finger(1, 121, 100)).Magnify == MagnifyPhase.Cancelled,
+    "Invalid coordinates must release a live native magnification");
+var disabledPinch = new TouchMotion();
+Update(disabledPinch, 0, Finger(0, 100, 100), Finger(1, 120, 100));
+Check(Update(disabledPinch, .01, Finger(0, 99, 100), Finger(1, 121, 100)).Magnify == MagnifyPhase.None,
+    "Pinch and swipes must remain off unless explicitly enabled");
+
+var landing = new TouchMotion();
+Gesture(landing, 0, Finger(0, 100, 100), Finger(1, 120, 100));
+Check(Gesture(landing, .01, Finger(0, 99, 100), Finger(1, 121, 100)).Magnify == MagnifyPhase.Began,
+    "A tentative two-finger contact can initially classify as pinch");
+Check(Gesture(landing, .02, Finger(0, 99, 100), Finger(1, 121, 100), Finger(2, 140, 100)).Magnify == MagnifyPhase.Cancelled,
+    "A third finger landing after pinch must cancel the zoom");
+Check(Gesture(landing, .03, Finger(0, 106, 100), Finger(1, 128, 100), Finger(2, 147, 100)).Swipe == SwipeDirection.Right,
+    "Asynchronous three-finger touchdown must still allow a system swipe");
+
+foreach (var (direction, key) in new[] {
+    (SwipeDirection.Left, 124), (SwipeDirection.Right, 123),
+    (SwipeDirection.Up, 126), (SwipeDirection.Down, 125) })
+{
+    var shortcut = SwipeShortcut.For(direction);
+    Check(shortcut.Key == key && shortcut.Flags == 0x840000,
+        "System swipes must match macOS Control+Arrow symbolic shortcuts, including the function-key bit");
+}
+
+Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
 {
@@ -304,6 +433,10 @@ sealed class RecordingClicker : ITouchClicker
 {
     public List<TapButton> Buttons = [];
     public int DragStarts, DragMoves, DragEnds;
+    public List<SwipeDirection> Swipes = [];
+    public List<MagnifyPhase> Magnifications = [];
+    public void Swipe(SwipeDirection direction) => Swipes.Add(direction);
+    public void Magnify(float amount, MagnifyPhase phase) => Magnifications.Add(phase);
     public void Click(TapButton button, double now) => Buttons.Add(button);
     public void BeginDrag(double now) => DragStarts++;
     public void MoveDrag(Vector2 delta) => DragMoves++;
