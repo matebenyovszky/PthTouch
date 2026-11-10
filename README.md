@@ -11,6 +11,7 @@ A macOS output-mode plugin for OpenTabletDriver that combines relative pen input
 - After scrolling, all fingers must lift before one-finger cursor movement resumes.
 - Touch is suppressed near the pen, including accidental contacts that began while the pen was present.
 - Optional near-proximity gating suppresses unreliable far-hover coordinates while preserving pen/button releases. Re-entry establishes a fresh relative origin.
+- An opt-in spatial hover deadband suppresses tiny stationary jitter without temporal averaging. Pen pressure and side-button use bypass it; the setting defaults to 0 mm (off). A 0.04 mm threshold corresponds to 0.8 px at 20 px/mm.
 
 ## Requirements and tested hardware
 
@@ -46,7 +47,7 @@ dotnet run --project checks/Checks.csproj -c Release
 
 The plugin DLL is `plugin/bin/Release/net10.0/PthTouch.dll`. Place only that DLL at the top level of the distribution ZIP. Do not bundle OpenTabletDriver assemblies.
 
-Checks exercise touch transitions, stationary contacts, scroll/tap separation, left/right tap dispatch, native double-click sequencing, tap-and-drag and release/cancellation, pen proximity suppression, frozen pen-scroll transitions, far-hover release preservation and re-entry without a cursor jump. They use fake pointers/click sinks and do not generate native UI events, so they also run on Linux CI.
+Checks exercise touch transitions, stationary contacts, scroll/tap separation, left/right tap dispatch, native double-click sequencing, tap-and-drag and release/cancellation, pen proximity suppression, frozen pen-scroll transitions, spatial hover hysteresis, far-hover release preservation and re-entry without a cursor jump. They use fake pointers/click sinks and do not generate native UI events, so they also run on Linux CI.
 
 ## Limitations
 

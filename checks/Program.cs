@@ -234,6 +234,37 @@ scrollMode.Read(ScrollPen(1602, false));
 Check(Vector2.Distance(scrollPointer.LastPosition, new(.2f, 0)) < .001,
     "Ordinary relative motion must resume from the new pen position");
 
+var deadband = new HoverDeadband();
+Vector2 rawScale = new(.005f);
+Check(deadband.Filter(new(100, 100), rawScale, .04f, true) == new Vector2(100),
+    "Hover deadband must anchor the first report");
+Check(deadband.Filter(new(104, 98), rawScale, .04f, true) == new Vector2(100),
+    "Subpixel hover jitter must stay at the anchor");
+Check(deadband.Filter(new(109, 100), rawScale, .04f, true) == new Vector2(109, 100),
+    "Intentional motion must pass its full displacement immediately");
+Check(deadband.Filter(new(1000, 100), rawScale, .04f, true) == new Vector2(1000, 100),
+    "Fast movement must not be averaged or delayed");
+Check(deadband.Filter(new(1001, 100), rawScale, .04f, false) == new Vector2(1001, 100),
+    "Contact/button use must bypass hover filtering");
+Check(deadband.Filter(new(1002, 100), rawScale, 0, true) == new Vector2(1002, 100),
+    "Zero deadband must preserve exact input");
+deadband.Reset();
+Check(deadband.Filter(new(5000, 5000), rawScale, .04f, true) == new Vector2(5000),
+    "Re-entry must not reuse an old hover anchor");
+var jitterPointer = new RecordingPointer();
+var jitterMode = new TrackpadRelativeMode
+{
+    Pointer = jitterPointer, Clicker = sink, Sensitivity = new(20),
+    ResetTime = TimeSpan.FromMilliseconds(100), HoverJitterDeadband = .04f
+};
+jitterMode.Read(new PenReport(new(1000, 1000), true));
+jitterMode.Read(new PenReport(new(1004, 998), true));
+Check(jitterPointer.LastPosition == Vector2.Zero, "The actual mode must suppress small hover displacement");
+jitterMode.Read(new PenReport(new(1010, 1000), true));
+Check(jitterPointer.LastPosition.X > 0, "The actual mode must immediately resume deliberate hover motion");
+jitterMode.Read(new PenReport(new(1011, 1000), true) { Pressure = 1 });
+Check(jitterPointer.LastPosition.X > 0, "The actual mode must not filter pen contact movement");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport

@@ -24,6 +24,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private Vector2? lastPenPosition;
     private bool touchDragging;
     private bool upperPenButton;
+    private readonly HoverDeadband hoverDeadband = new();
 
     // Public for deterministic output tests; the host uses the native default.
     public ITouchClicker Clicker { get; set; } = new MacTouchClicker();
@@ -46,6 +47,9 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     [BooleanProperty("Limit unstable pen hover", ""), DefaultPropertyValue(true)]
     public bool LimitUnstableHover { get; set; } = true;
 
+    [Property("Hover jitter deadband"), DefaultPropertyValue(0f), Unit("mm")]
+    public float HoverJitterDeadband { get; set; }
+
     public override void Read(IDeviceReport deviceReport)
     {
         lock (sync)
@@ -65,6 +69,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 reanchorPen = true;
                 lastPenPosition = null;
                 upperPenButton = false;
+                hoverDeadband.Reset();
             }
             else if (deviceReport is ITabletReport pen)
             {
@@ -79,9 +84,18 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 bool scrollButtonChanged = upper != upperPenButton &&
                     Elements.Any(element => element.GetType().FullName == "ScrollBinding.ScrollBindingFilter");
                 upperPenButton = upper;
-                Vector2 position = pen.Position;
                 bool farHover = LimitUnstableHover && deviceReport is IProximityReport { NearProximity: false } &&
                     pen.Pressure == 0 && !pen.PenButtons.Any(x => x);
+                if (farHover || reanchorPen || scrollButtonChanged)
+                    hoverDeadband.Reset();
+                var digitizer = Tablet?.Properties.Specifications.Digitizer;
+                Vector2 mmPerUnit = new(
+                    (digitizer?.Width ?? 325.12f) / (digitizer?.MaxX ?? 65024),
+                    (digitizer?.Height ?? 203.2f) / (digitizer?.MaxY ?? 40640));
+                pen.Position = hoverDeadband.Filter(pen.Position, mmPerUnit,
+                    Math.Clamp(HoverJitterDeadband, 0, 1),
+                    !farHover && pen.Pressure == 0 && !pen.PenButtons.Any(x => x));
+                Vector2 position = pen.Position;
                 if (farHover)
                     pen.Position = lastPenPosition ?? position;
 
