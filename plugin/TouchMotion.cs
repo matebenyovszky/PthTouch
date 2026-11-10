@@ -8,13 +8,14 @@ public enum DragChange { None, Start, End }
 public readonly record struct Motion(Vector2 Cursor, Vector2 Scroll,
     TapButton Tap = TapButton.None, DragChange Drag = DragChange.None,
     SwipeDirection Swipe = SwipeDirection.None, float Magnification = 0,
-    MagnifyPhase Magnify = MagnifyPhase.None);
+    MagnifyPhase Magnify = MagnifyPhase.None, DesktopGesture Desktop = default);
 
 // A contact snapshot is supplied by OTD's Wacom parser. No timers or delayed
 // scroll actions are used: every output comes from an actual coordinate delta.
 public sealed class TouchMotion
 {
     private readonly TouchGestures gestures = new();
+    private readonly DesktopSwipeTracker desktop = new();
     private Vector2? lastPosition;
     private int lastSignature = -1;
     private double lastTime;
@@ -31,6 +32,7 @@ public sealed class TouchMotion
     public void Reset()
     {
         gestures.Reset();
+        desktop.Reset();
         lastPosition = null;
         lastSignature = -1;
         multipleContacts = false;
@@ -49,15 +51,17 @@ public sealed class TouchMotion
     public Motion Update(ReadOnlySpan<Contact> contacts, double now,
         Vector2 mmPerUnit, Vector2 cursorPixelsPerMm, float scrollPixelsPerMm,
         bool penNearby = false, bool tapAndDrag = true, double doubleClickInterval = 0.5,
-        bool threeFingerSwipes = false, bool pinchZoom = false)
+        bool threeFingerSwipes = false, bool pinchZoom = false,
+        bool interactiveDesktopSwipes = false, float desktopSwipeDistanceMm = 60)
     {
         if (penNearby)
         {
             bool endDrag = dragging;
+            var desktopCancel = desktop.Cancel();
             MagnifyPhase phase = gestures.Cancel();
             Reset();
             ignoreUntilLift = contacts.Length > 0;
-            return new Motion(Vector2.Zero, Vector2.Zero, Drag: endDrag ? DragChange.End : DragChange.None, Magnify: phase);
+            return new Motion(Vector2.Zero, Vector2.Zero, Drag: endDrag ? DragChange.End : DragChange.None, Magnify: phase, Desktop: desktopCancel);
         }
         if (contacts.Length == 0)
         {
@@ -65,6 +69,7 @@ public sealed class TouchMotion
             if (!gestureActive && !ignoreUntilLift)
                 return default;
             bool endDrag = dragging;
+            var desktopEnd = desktop.Finish(now);
             var endGesture = gestures.Update(contacts, now, mmPerUnit, threeFingerSwipes, pinchZoom);
             TapButton tap = !endDrag && !ignoreUntilLift && gestureActive && tapEligible &&
                 now - gestureStart <= 0.30
@@ -74,7 +79,7 @@ public sealed class TouchMotion
             if (tap == TapButton.Left)
                 lastSingleTap = now;
             return new Motion(Vector2.Zero, Vector2.Zero, tap, endDrag ? DragChange.End : DragChange.None,
-                Magnify: endGesture.Magnify);
+                Magnify: endGesture.Magnify, Desktop: desktopEnd);
         }
         if (ignoreUntilLift)
             return default;
@@ -102,15 +107,28 @@ public sealed class TouchMotion
                 !float.IsFinite(contact.Position.Y))
             {
                 bool endDrag = dragging;
+                var desktopCancel = desktop.Cancel();
                 var phase = gestures.Cancel();
                 Reset();
                 ignoreUntilLift = true;
                 return new Motion(Vector2.Zero, Vector2.Zero, Drag: endDrag ? DragChange.End : DragChange.None,
-                    Magnify: phase);
+                    Magnify: phase, Desktop: desktopCancel);
             }
             tapOrigins[contact.Id] ??= contact.Position;
             if (((contact.Position - tapOrigins[contact.Id]!.Value) * mmPerUnit).Length() > 1.0f)
                 tapEligible = false;
+        }
+
+        if (threeFingerSwipes && interactiveDesktopSwipes)
+        {
+            var tracking = desktop.Update(contacts, now, mmPerUnit, desktopSwipeDistanceMm);
+            if (tracking.Captured)
+            {
+                tapEligible = dragCandidate = false;
+                multipleContacts = true;
+                lastPosition = null; lastSignature = -1;
+                return new Motion(Vector2.Zero, Vector2.Zero, Desktop: tracking.Gesture);
+            }
         }
 
         var advanced = gestures.Update(contacts, now, mmPerUnit, threeFingerSwipes, pinchZoom);

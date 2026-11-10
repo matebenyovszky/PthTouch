@@ -443,6 +443,126 @@ middleMode.Read(ScrollPen(1000, true)); middleMode.Read(ScrollPen(1100, true));
 middleMode.Read(ScrollPen(1000, false));
 Check(middleSink.Buttons.Count == 1, "Actual pen scrolling must never append a middle click");
 
+Motion Interactive(TouchMotion state, double time, params Contact[] contacts) =>
+    state.Update(contacts, time, Vector2.One, new(20), 12,
+        threeFingerSwipes: true, pinchZoom: true, interactiveDesktopSwipes: true);
+var follow = new TouchMotion();
+Check(Interactive(follow, 0, Three(100, 100)) == default, "Interactive touchdown must not animate yet");
+var began = Interactive(follow, .01, Three(97, 100));
+Check(began.Desktop.Phase == DesktopSwipePhase.Began && began.Desktop.Progress > 0 &&
+    began.Swipe == SwipeDirection.None && began.Cursor == Vector2.Zero && began.Scroll == Vector2.Zero,
+    "Horizontal movement must begin native progress without a shortcut or cursor motion");
+var changed = Interactive(follow, .02, Three(90, 100));
+Check(changed.Desktop.Phase == DesktopSwipePhase.Changed && changed.Desktop.Progress > began.Desktop.Progress,
+    "Desktop progress must follow further finger movement directly");
+var reversed = Interactive(follow, .03, Three(95, 100));
+Check(reversed.Desktop.Progress < changed.Desktop.Progress,
+    "Reversing the fingers must reverse the animation before release");
+Interactive(follow, .04, Three(80, 100));
+Check(Interactive(follow, .05).Desktop.Phase == DesktopSwipePhase.Ended,
+    "A deliberate desktop swipe must end and settle on lift");
+Check(Interactive(follow, .06) == default, "Desktop ending must not repeat on idle packets");
+var retreat = new TouchMotion();
+Interactive(retreat, 0, Three(100, 100)); Interactive(retreat, .01, Three(95, 100));
+Interactive(retreat, .02, Three(100, 100));
+Check(Interactive(retreat, .03).Desktop.Phase == DesktopSwipePhase.Cancelled,
+    "Returning to the origin must roll the desktop back on lift");
+var dropout = new TouchMotion();
+Interactive(dropout, 0, Three(100, 100)); Interactive(dropout, .01, Three(95, 100));
+Check(Interactive(dropout, .02, Finger(0, 95, 100), Finger(1, 105, 100)).Desktop.Phase == DesktopSwipePhase.None,
+    "A brief dropped contact must not prematurely end the animation");
+Check(Interactive(dropout, .03, Three(90, 100)).Desktop.Phase == DesktopSwipePhase.Changed,
+    "All three original contacts must resume tracking within the dropout grace period");
+Check(Interactive(dropout, .04, Finger(0, 90, 100), Finger(1, 100, 100), Finger(2, 110, 100), Finger(3, 120, 100))
+    .Desktop.Phase == DesktopSwipePhase.Cancelled, "A palm must cancel a native desktop animation");
+var desktopPen = new TouchMotion();
+Interactive(desktopPen, 0, Three(100, 100)); Interactive(desktopPen, .01, Three(95, 100));
+Check(desktopPen.Update(Three(95, 100), .02, Vector2.One, new(20), 12, penNearby: true,
+    threeFingerSwipes: true, interactiveDesktopSwipes: true).Desktop.Phase == DesktopSwipePhase.Cancelled,
+    "Pen takeover must cancel the native desktop animation");
+var heldDesktop = new TouchMotion();
+Interactive(heldDesktop, 0, Three(100, 100));
+for (int i = 1; i <= 30; i++) Interactive(heldDesktop, i * .01, Three(100, 100));
+Check(Interactive(heldDesktop, .31, Three(95, 100)).Desktop.Phase == DesktopSwipePhase.Began,
+    "Resting three fingers before moving must not disarm the gesture");
+var interactiveVertical = new TouchMotion();
+Interactive(interactiveVertical, 0, Three(100, 100));
+Check(Interactive(interactiveVertical, .01, Three(100, 93)).Swipe == SwipeDirection.Up,
+    "Interactive horizontal switching must preserve vertical system shortcuts");
+var desktopSink = new RecordingClicker();
+var desktopMode = new TrackpadRelativeMode { Pointer = new RecordingPointer(), Clicker = desktopSink,
+    ThreeFingerSwipes = true, InteractiveDesktopSwipes = true, InteractiveDesktopSupported = true };
+desktopMode.Read(new TouchReport([Point(0, 1000, 1000), Point(1, 1200, 1000), Point(2, 1400, 1000)]));
+desktopMode.Read(new TouchReport([Point(0, 950, 1000), Point(1, 1150, 1000), Point(2, 1350, 1000)]));
+Check(desktopSink.DesktopGestures.Count == 1 && desktopSink.DesktopGestures[0].Phase == DesktopSwipePhase.Began &&
+    desktopSink.Swipes.Count == 0, "Actual mode must route desktop progress instead of a keyboard shortcut");
+desktopMode.Dispose();
+Check(desktopSink.DesktopGestures.Last().Phase == DesktopSwipePhase.Cancelled,
+    "Unloading the mode must release a native desktop animation");
+
+var smoothLoss = new TouchMotion();
+Interactive(smoothLoss, 0, Three(100, 100));
+var fullThree = Interactive(smoothLoss, .01, Three(95, 100));
+var onlyTwo = Interactive(smoothLoss, .02, Finger(0, 90, 100), Finger(1, 100, 100));
+Check(onlyTwo.Desktop.Phase == DesktopSwipePhase.Changed && onlyTwo.Desktop.Progress > fullThree.Desktop.Progress,
+    "A brief missing third finger must keep following the two remaining contacts");
+var rejoins = Interactive(smoothLoss, .03, Finger(0, 85, 100), Finger(1, 95, 100), Finger(2, 111, 100));
+Check(MathF.Abs(rejoins.Desktop.Progress - .25f) < .0001f,
+    "The returning finger's stale position must not jump the reconstructed desktop centroid");
+Check(Interactive(smoothLoss, .04, Finger(0, 85, 100), Finger(1, 95, 100), Finger(2, 111, 100)).Desktop.Phase == DesktopSwipePhase.None,
+    "Stationary duplicate frames must not flood the native gesture stream");
+
+var scrollNoiseFilter = new ScrollBinding.ScrollBindingFilter();
+var scrollNoiseMode = new TrackpadRelativeMode { Pointer = new RecordingPointer(), Clicker = new RecordingClicker(),
+    Sensitivity = new(20), Elements = [scrollNoiseFilter], FilterPenScrollNoise = true,
+    HoverJitterDeadband = .1f, RejectHoverSpikes = true };
+scrollNoiseMode.Read(ScrollPen(1000, false)); scrollNoiseMode.Read(ScrollPen(1000, true));
+scrollNoiseMode.Read(ScrollPen(1025, true)); scrollNoiseMode.Read(ScrollPen(1000, true));
+Check(scrollNoiseFilter.SeenPositions.TakeLast(3).All(p => p == new Vector2(1000, 1000)),
+    "The scroll plugin must receive filtered coordinates even while the upper button is held");
+scrollNoiseMode.Read(ScrollPen(1100, true));
+Check(scrollNoiseFilter.SeenPositions.Last().X == 1100,
+    "Deliberate pen-scroll movement must bypass the small-spike window immediately");
+var stick = new PenJoystickScroll();
+void Stick(Vector2 position, bool pressed, double now, bool reverse = false) => stick.Update(position, pressed, now,
+    new(20, 20), new(600, 1200), 1, 2, reverse);
+Stick(new(100), true, 0);
+Check(stick.Step(.01) == Vector2.Zero, "Joystick centre must not scroll");
+Stick(new(100.2f, 100.3f), true, .02);
+Check(stick.Step(.03) == Vector2.Zero, "Joystick deadzone must absorb stationary pen noise");
+Stick(new(100, 120), true, .04);
+Check(stick.Step(.05).Y < 0, "Joystick edge must scroll in the intended document direction");
+Check(stick.Step(.06).Y < 0, "An unmoving pen at the edge must continue scrolling without new coordinates");
+float edge = MathF.Abs(stick.Step(.07).Y);
+Stick(new(100, 140), true, .08);
+Check(MathF.Abs(stick.Step(.09).Y) <= edge * 2 + 1,
+    "Beyond the virtual edge must remain bounded at the configured maximum speed");
+Stick(new(100), true, .10);
+Check(stick.Step(.11) == Vector2.Zero, "Returning to centre must stop continuous scrolling");
+Stick(new(100, 120), false, .12);
+Check(!stick.Active && stick.Step(.13) == Vector2.Zero, "Releasing the button must immediately cancel all wheel output");
+Stick(new(300), true, 1); Stick(new(300, 320), true, 1.01, reverse: true);
+Check(stick.Step(1.02).Y > 0, "Joystick reverse option must reverse the wheel direction");
+Check(stick.Step(2) == Vector2.Zero, "Lost device reports must not leave autoscroll running indefinitely");
+stick.Reset(); Stick(new(500), true, 3);
+Check(stick.Step(3.01) == Vector2.Zero, "Every new press must establish its own virtual centre");
+var stickPointer = new RecordingPointer();
+var stickSink = new RecordingClicker();
+var stickMode = new TrackpadRelativeMode { Pointer = stickPointer, Clicker = stickSink,
+    Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100),
+    PenJoystickScrolling = true, EnableJoystickTimer = false, UpperButtonTapMiddleClick = true };
+stickMode.Read(ScrollPen(1000, false)); stickMode.Read(ScrollPen(1000, true));
+stickMode.Read(ScrollPen(5000, true));
+Check(stickPointer.LastPosition == Vector2.Zero,
+    "Joystick holding must freeze the actual relative pointer while the pen is displaced");
+stickMode.Read(ScrollPen(5000, false));
+Check(stickPointer.LastPosition == Vector2.Zero && stickSink.Buttons.Count == 0,
+    "Joystick release must neither jump the cursor nor emit a middle click after scrolling");
+stickMode.Read(ScrollPen(5020, false));
+Check(MathF.Abs(stickPointer.LastPosition.X - 4) < .001f,
+    "Relative pointing must resume from the post-scroll pen position without discarded movement");
+stickMode.Dispose();
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
@@ -469,6 +589,8 @@ sealed class RecordingClicker : ITouchClicker
     public int DragStarts, DragMoves, DragEnds;
     public List<SwipeDirection> Swipes = [];
     public List<MagnifyPhase> Magnifications = [];
+    public List<DesktopGesture> DesktopGestures = [];
+    public void DesktopSwipe(DesktopGesture gesture) => DesktopGestures.Add(gesture);
     public void Swipe(SwipeDirection direction) => Swipes.Add(direction);
     public void Magnify(float amount, MagnifyPhase phase) => Magnifications.Add(phase);
     public void Click(TapButton button, double now) => Buttons.Add(button);

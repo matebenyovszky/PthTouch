@@ -123,18 +123,37 @@ struct SettingsView: View {
                         number("Reset after a pause", value: $model.values.resetMs, unit: "ms")
                     }
                     Section("Upper pen button") {
+                        Picker("Scrolling mode", selection: $model.values.joystick) {
+                            Text("Drag scroll").tag(false)
+                            Text("Joystick autoscroll").tag(true)
+                        }
+                        .pickerStyle(.segmented)
                         Toggle("Short press opens links with a middle click", isOn: $model.values.middleTap)
+                            .disabled(!model.hasPenScroll && !model.values.joystick)
                         Text("Release without moving to click. Hold and move the pen to scroll.")
                             .font(.caption).foregroundColor(.secondary)
-                        number("Horizontal scroll speed", value: $model.values.penScrollX, unit: "")
-                        number("Vertical scroll speed", value: $model.values.penScrollY, unit: "")
-                        Toggle("Reverse pen scrolling", isOn: $model.values.penScrollInvert)
-                        Toggle("Keep cursor in place while scrolling", isOn: $model.values.penScrollFreeze)
-                    }
-                    .disabled(!model.hasPenScroll)
-                    if !model.hasPenScroll {
-                        Text("Set the upper pen button to Pen Scroll and enable Scroll Binding Filter in OpenTabletDriver to use these controls.")
-                            .font(.caption).foregroundColor(.secondary)
+                        if model.values.joystick {
+                            number("Horizontal reach from centre", value: $model.values.joystickWidth, unit: "mm")
+                            number("Vertical reach from centre", value: $model.values.joystickHeight, unit: "mm")
+                            number("Maximum horizontal speed", value: $model.values.joystickSpeedX, unit: "px/s")
+                            number("Maximum vertical speed", value: $model.values.joystickSpeedY, unit: "px/s")
+                            number("Centre deadzone", value: $model.values.joystickDeadzone, unit: "mm")
+                            number("Acceleration (1–4)", value: $model.values.joystickCurve, unit: "")
+                            Toggle("Reverse joystick scrolling", isOn: $model.values.joystickReverse)
+                            Text("Where you press becomes the centre. A 20 mm reach each way makes a 40 × 40 mm field. Hold at an edge to keep scrolling; return to centre or release to stop.")
+                                .font(.caption).foregroundColor(.secondary)
+                        } else {
+                            Group {
+                                number("Horizontal scroll speed", value: $model.values.penScrollX, unit: "")
+                                number("Vertical scroll speed", value: $model.values.penScrollY, unit: "")
+                                Toggle("Reverse pen scrolling", isOn: $model.values.penScrollInvert)
+                                Toggle("Keep cursor in place while scrolling", isOn: $model.values.penScrollFreeze)
+                            }.disabled(!model.hasPenScroll)
+                            if !model.hasPenScroll {
+                                Text("For drag scrolling, assign Pen Scroll and Scroll Binding Filter in OpenTabletDriver. Joystick autoscroll is available directly.")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                        }
                     }
                 }.formStyle(.grouped).tabItem { Label("Pen", systemImage: "pencil.tip") }
                 Form {
@@ -148,6 +167,12 @@ struct SettingsView: View {
                         Toggle("Three-finger system swipes", isOn: $model.values.swipes)
                         Text("Left/right: Spaces · Up: Mission Control · Down: app windows")
                             .font(.caption).foregroundColor(.secondary)
+                        Toggle("Desktop animation follows fingers (experimental)", isOn: $model.values.interactiveDesktop)
+                            .disabled(!model.values.swipes || ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27)
+                        number("Travel for a full desktop", value: $model.values.desktopTravel, unit: "mm")
+                            .disabled(!model.values.swipes || !model.values.interactiveDesktop)
+                        Text("Drag horizontally to preview, reverse to return, then lift to settle. Interactive animation supports macOS 13–26.")
+                            .font(.caption).foregroundColor(.secondary)
                         Toggle("Pinch to zoom (experimental)", isOn: $model.values.pinch)
                     }
                 }.formStyle(.grouped).tabItem { Label("Touch & gestures", systemImage: "hand.point.up.left") }
@@ -156,7 +181,9 @@ struct SettingsView: View {
                         Toggle("Ignore unstable far hover", isOn: $model.values.limitHover)
                         number("Hover deadband", value: $model.values.hoverDeadband, unit: "mm")
                         Toggle("Reject isolated hover spikes", isOn: $model.values.rejectSpikes)
-                        Text("Suggested starting point: 0.10 mm with spike rejection. Zero disables the deadband and spike filter. Contact and pen buttons bypass the filter.")
+                        Toggle("Apply noise filtering while pen-scrolling", isOn: $model.values.scrollNoise)
+                            .disabled(model.values.hoverDeadband <= 0)
+                        Text("Suggested starting point: 0.10 mm with spike rejection. Zero disables the deadband and spike filter. Pen contact bypasses the hover filter. Pen scrolling uses it only when enabled above.")
                             .font(.caption).foregroundColor(.secondary)
                     }
                 }.formStyle(.grouped).tabItem { Label("Stability", systemImage: "waveform.path") }

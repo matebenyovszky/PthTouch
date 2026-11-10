@@ -25,6 +25,9 @@ struct SettingsChecks {
         check(preferences.xSensitivity == 20 && preferences.resetMs == 100, "Load numeric values and reset time")
         preferences.xSensitivity = 22; preferences.swipes = true; preferences.middleTap = true
         preferences.resetMs = 250; preferences.penScrollY = 1.25
+        preferences.interactiveDesktop = true; preferences.desktopTravel = 80
+        preferences.joystick = true; preferences.joystickWidth = 25; preferences.joystickHeight = 30
+        preferences.joystickSpeedY = 2400; preferences.joystickReverse = true; preferences.scrollNoise = true
         let merged = try document.merging(preferences)
         let roundTrip = try ProfileSettings(document: merged).read()
         check(roundTrip.matches(preferences), "Save/reload must preserve every exposed control")
@@ -42,9 +45,9 @@ struct SettingsChecks {
         var invalid = preferences; invalid.hoverDeadband = .nan
         do { _ = try document.merging(invalid); check(false, "Reject non-finite input") } catch { check(true, "Rejected non-finite input") }
         let baseline = PthPreferences(); var external = baseline, edited = baseline
-        external.xSensitivity = 35; edited.pinch = true
+        external.xSensitivity = 35; external.desktopTravel = 90; edited.pinch = true
         let combined = external.applyingChanges(from: baseline, to: edited)
-        check(combined.xSensitivity == 35 && combined.pinch, "Merge edits with concurrent changes from the driver window")
+        check(combined.xSensitivity == 35 && combined.desktopTravel == 90 && combined.pinch, "Merge edits with concurrent changes from the driver window")
         do { _ = try ProfileSettings(document: ["Profiles": [other]]); check(false, "Reject incompatible mode") } catch { check(true, "Rejected incompatible mode") }
         let response = try mockRPC(error: false)
         check((response as? [String: Any])?["answer"] as? Int == 42, "Ignore notifications/unrelated responses before the matching RPC result")

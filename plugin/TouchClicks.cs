@@ -21,6 +21,7 @@ public interface ITouchClicker
     void EndDrag();
     void Swipe(SwipeDirection direction) { }
     void Magnify(float amount, MagnifyPhase phase) { }
+    void DesktopSwipe(DesktopGesture gesture) { }
 }
 
 public sealed class ClickSequence
@@ -143,6 +144,45 @@ public sealed class MacTouchClicker : ITouchClicker
             }
         }
         finally { objc_autoreleasePoolPop(pool); }
+    }
+
+    public static bool SupportsInteractiveDesktop => OperatingSystem.IsMacOSVersionAtLeast(13) &&
+        !OperatingSystem.IsMacOSVersionAtLeast(27);
+
+    public void DesktopSwipe(DesktopGesture gesture)
+    {
+        if (!SupportsInteractiveDesktop || gesture.Phase == DesktopSwipePhase.None ||
+            !float.IsFinite(gesture.Progress) || !float.IsFinite(gesture.Velocity)) return;
+        IntPtr pool = objc_autoreleasePoolPush();
+        IntPtr ev = CGEventCreate(IntPtr.Zero);
+        IntPtr companion = CGEventCreate(IntPtr.Zero);
+        try
+        {
+            if (ev == IntPtr.Zero || companion == IntPtr.Zero) return;
+            // Native pre-macOS-27 DockControl protocol. Field definitions
+            // cross-checked against InstantSpaceSwitcher (MIT) and IOHIDFamily.
+            CGEventSetType(ev, 30);
+            CGEventSetIntegerValueField(ev, 110, 23); // Dock swipe HID subtype
+            CGEventSetIntegerValueField(ev, 123, 1); // horizontal motion
+            CGEventSetIntegerValueField(ev, 132, (long)gesture.Phase);
+            CGEventSetDoubleValueField(ev, 124, gesture.Progress);
+            CGEventSetDoubleValueField(ev, 129,
+                gesture.Phase == DesktopSwipePhase.Ended ? gesture.Velocity : 0);
+            CGEventSetDoubleValueField(ev, 130, 0);
+            CGEventSetLocation(ev, CurrentPosition());
+            CGEventSetFlags(ev, CGEventSourceFlagsState(0));
+            CGEventPost(1, ev); // session event tap used by native Dock gestures
+            CGEventSetType(companion, 29); // companion generic gesture envelope
+            CGEventSetLocation(companion, CurrentPosition());
+            CGEventSetFlags(companion, CGEventSourceFlagsState(0));
+            CGEventPost(1, companion);
+        }
+        finally
+        {
+            if (ev != IntPtr.Zero) CFRelease(ev);
+            if (companion != IntPtr.Zero) CFRelease(companion);
+            objc_autoreleasePoolPop(pool);
+        }
     }
 
     public void Magnify(float amount, MagnifyPhase phase)
