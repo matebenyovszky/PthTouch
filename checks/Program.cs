@@ -265,6 +265,21 @@ Check(jitterPointer.LastPosition.X > 0, "The actual mode must immediately resume
 jitterMode.Read(new PenReport(new(1011, 1000), true) { Pressure = 1 });
 Check(jitterPointer.LastPosition.X > 0, "The actual mode must not filter pen contact movement");
 
+var spikes = new HoverDeadband();
+Vector2 Spike(float x, bool hovering = true) => spikes.Filter(new(x, 1000), rawScale, .1f, hovering, true);
+Check(Spike(1000) == new Vector2(1000), "Spike filtering must anchor the first sample");
+Check(Spike(1030) == new Vector2(1000), "An isolated small hover spike must be rejected");
+Check(Spike(1000) == new Vector2(1000), "A rejected spike must not rebound on the next report");
+Check(Spike(1000) == new Vector2(1000), "A rejected spike must leave no delayed movement");
+Check(Spike(1500) == new Vector2(1500, 1000), "Large intentional motion must bypass the window immediately");
+Check(Spike(1500) == new Vector2(1500, 1000), "Fast motion must not replay stale history when stopping");
+Check(Spike(1501, false) == new Vector2(1501, 1000), "Contact must bypass both filters immediately");
+spikes.Reset(); Spike(1000);
+Check(Spike(1025) == new Vector2(1000), "Small deliberate motion may wait one report");
+Check(Spike(1030) == new Vector2(1025, 1000), "Small deliberate motion must resume on the next report");
+spikes.Reset();
+Check(Spike(3000) == new Vector2(3000, 1000), "Re-entry must discard median history");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport

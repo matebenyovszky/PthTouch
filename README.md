@@ -11,7 +11,8 @@ A macOS output-mode plugin for OpenTabletDriver that combines relative pen input
 - After scrolling, all fingers must lift before one-finger cursor movement resumes.
 - Touch is suppressed near the pen, including accidental contacts that began while the pen was present.
 - Optional near-proximity gating suppresses unreliable far-hover coordinates while preserving pen/button releases. Re-entry establishes a fresh relative origin.
-- An opt-in spatial hover deadband suppresses tiny stationary jitter without temporal averaging. Pen pressure and side-button use bypass it; the setting defaults to 0 mm (off). A 0.04 mm threshold corresponds to 0.8 px at 20 px/mm.
+- Optional three-report median spike rejection removes isolated hover outliers before the deadband. It delays small continuous hover movement by one report (about 5 ms at 200 Hz); movements larger than four times the deadband bypass it immediately. Contact and side buttons bypass both filters. The option defaults to off.
+- An opt-in spatial hover deadband suppresses tiny stationary jitter without temporal averaging. Pen pressure and side-button use bypass it; the setting defaults to 0 mm (off). For stationary PTH-851 noise, a 0.10 mm deadband with spike rejection worked well in a 30-second replay at 20 px/mm; results depend on hardware and environment. Without spike rejection, a 0.04 mm threshold corresponds to 0.8 px at 20 px/mm.
 
 ## Requirements and tested hardware
 

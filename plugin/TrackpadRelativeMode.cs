@@ -50,6 +50,9 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     [Property("Hover jitter deadband"), DefaultPropertyValue(0f), Unit("mm")]
     public float HoverJitterDeadband { get; set; }
 
+    [BooleanProperty("Reject hover spikes", ""), DefaultPropertyValue(false)]
+    public bool RejectHoverSpikes { get; set; }
+
     public override void Read(IDeviceReport deviceReport)
     {
         lock (sync)
@@ -94,7 +97,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                     (digitizer?.Height ?? 203.2f) / (digitizer?.MaxY ?? 40640));
                 pen.Position = hoverDeadband.Filter(pen.Position, mmPerUnit,
                     Math.Clamp(HoverJitterDeadband, 0, 1),
-                    !farHover && pen.Pressure == 0 && !pen.PenButtons.Any(x => x));
+                    !farHover && pen.Pressure == 0 && !pen.PenButtons.Any(x => x),
+                    RejectHoverSpikes);
                 Vector2 position = pen.Position;
                 if (farHover)
                     pen.Position = lastPenPosition ?? position;
