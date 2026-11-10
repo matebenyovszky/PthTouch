@@ -21,6 +21,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private int previousTouchCount;
     private bool reportedUnsupportedPointer;
     private bool reanchorPen;
+    private bool suppressNextPenDelta;
     private Vector2? lastPenPosition;
     private bool touchDragging;
     private bool upperPenButton;
@@ -109,6 +110,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     {
         lock (sync)
         {
+            if (disposed) return;
             double now = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
             if (deviceReport is ITouchReport report)
             {
@@ -201,10 +203,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 {
                     // Re-establish the origin after ignoring far-range noise,
                     // without turning the pen's displacement into cursor motion.
-                    TimeSpan savedReset = ResetTime;
-                    ResetTime = TimeSpan.Zero;
+                    suppressNextPenDelta = true;
                     base.Read(deviceReport);
-                    ResetTime = savedReset;
                 }
                 else
                     base.Read(deviceReport);
@@ -224,6 +224,20 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             // OTD's original pipeline. Touch never creates a pen report.
             base.Read(deviceReport);
         }
+    }
+
+    protected override IAbsolutePositionReport Transform(IAbsolutePositionReport report)
+    {
+        // Let the base mode advance its origin, then discard just this delta.
+        // Never temporarily change ResetTime: the host can configure it while
+        // the new mode is already receiving reports during SetSettings.
+        var transformed = base.Transform(report);
+        if (suppressNextPenDelta)
+        {
+            transformed.Position = Vector2.Zero;
+            suppressNextPenDelta = false;
+        }
+        return transformed;
     }
 
     private void HandleTouch(ITouchReport report, double now)

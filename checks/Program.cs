@@ -563,6 +563,28 @@ Check(MathF.Abs(stickPointer.LastPosition.X - 4) < .001f,
     "Relative pointing must resume from the post-scroll pen position without discarded movement");
 stickMode.Dispose();
 
+// SetSettings publishes a new output mode before configuring its relative
+// parameters. Simulate its ResetTime setter landing during the first report.
+var configuringFilter = new ScrollBinding.ScrollBindingFilter();
+var configuringPointer = new RecordingPointer();
+var configuringMode = new TrackpadRelativeMode { Pointer = configuringPointer,
+    Clicker = new RecordingClicker(), Sensitivity = new(20), Elements = [configuringFilter] };
+configuringFilter.BeforeConsume = () => {
+    configuringMode.ResetTime = TimeSpan.FromMilliseconds(100);
+    configuringFilter.BeforeConsume = null;
+};
+configuringMode.Read(ScrollPen(1000, false));
+Check(configuringMode.ResetTime == TimeSpan.FromMilliseconds(100),
+    "Reanchoring must not overwrite ResetTime configured concurrently by the host");
+configuringMode.Read(ScrollPen(1100, false));
+Check(configuringPointer.LastPosition.X > 0,
+    "Pointing must work after the host configures the mode during its first report");
+configuringMode.Dispose();
+int movesAfterDispose = configuringPointer.Moves;
+configuringMode.Read(ScrollPen(1200, false));
+Check(configuringPointer.Moves == movesAfterDispose,
+    "A disposed output mode must ignore reports while the host replaces it");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport

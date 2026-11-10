@@ -9,6 +9,7 @@ namespace ScrollBinding;
 public sealed class ScrollBindingFilter : IPositionedPipelineElement<IDeviceReport>
 {
     private bool pressing;
+    public Action BeforeConsume;
     public List<Vector2> SeenPositions = [];
     private Vector2? anchor;
     public PipelinePosition Position => PipelinePosition.PreTransform;
@@ -16,6 +17,7 @@ public sealed class ScrollBindingFilter : IPositionedPipelineElement<IDeviceRepo
 
     public void Consume(IDeviceReport report)
     {
+        BeforeConsume?.Invoke();
         bool nextPressing = pressing;
         if (report is ITabletReport pen)
         {
