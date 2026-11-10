@@ -122,6 +122,15 @@ struct SettingsView: View {
                         number("Y sensitivity", value: $model.values.ySensitivity, unit: "px/mm")
                         number("Reset after a pause", value: $model.values.resetMs, unit: "ms")
                     }
+                    Section("Velocity-based sensitivity (optional)") {
+                        Toggle("Enable for pen hover", isOn: $model.values.penAcceleration)
+                        Toggle("Enable for one-finger touch", isOn: $model.values.touchAcceleration)
+                        number("Slow movement multiplier", value: $model.values.slowGain, unit: "×")
+                        number("Fast movement multiplier", value: $model.values.fastGain, unit: "×")
+                        number("Full acceleration at", value: $model.values.accelerationSpeed, unit: "mm/s")
+                        Text("Multiplies the X/Y sensitivity above. Slow motion is precise; fast motion travels farther. Pen contact, buttons, touch dragging and scrolling keep their normal behaviour. Both switches off restore fixed sensitivity.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
                     Section("Upper pen button") {
                         Picker("Scrolling mode", selection: $model.values.joystick) {
                             Text("Drag scroll").tag(false)
@@ -135,10 +144,13 @@ struct SettingsView: View {
                         if model.values.joystick {
                             number("Horizontal reach from centre", value: $model.values.joystickWidth, unit: "mm")
                             number("Vertical reach from centre", value: $model.values.joystickHeight, unit: "mm")
-                            number("Maximum horizontal speed", value: $model.values.joystickSpeedX, unit: "px/s")
-                            number("Maximum vertical speed", value: $model.values.joystickSpeedY, unit: "px/s")
+                            number("Horizontal scroll speed", value: $model.values.joystickSpeedX, unit: "px/s")
+                            number("Vertical scroll speed", value: $model.values.joystickSpeedY, unit: "px/s")
                             number("Centre deadzone", value: $model.values.joystickDeadzone, unit: "mm")
-                            number("Acceleration (1–4)", value: $model.values.joystickCurve, unit: "")
+                            number("Response curve (1–12)", value: $model.values.joystickCurve, unit: "")
+                            number("Edge speed boost (1–10)", value: $model.values.edgeBoost, unit: "×")
+                            Text("Edge boost increases speed smoothly in the outer 35% of the field. Final edge speed = scroll speed × boost. A higher response curve keeps the centre slower; it does not raise the edge speed.")
+                                .font(.caption).foregroundColor(.secondary)
                             Toggle("Reverse joystick scrolling", isOn: $model.values.joystickReverse)
                             Text("Where you press becomes the centre. A 20 mm reach each way makes a 40 × 40 mm field. Hold at an edge to keep scrolling; return to centre or release to stop.")
                                 .font(.caption).foregroundColor(.secondary)
@@ -181,9 +193,11 @@ struct SettingsView: View {
                         Toggle("Ignore unstable far hover", isOn: $model.values.limitHover)
                         number("Hover deadband", value: $model.values.hoverDeadband, unit: "mm")
                         Toggle("Reject isolated hover spikes", isOn: $model.values.rejectSpikes)
-                        Toggle("Apply noise filtering while pen-scrolling", isOn: $model.values.scrollNoise)
+                        Toggle("Filter all pen movement (including dragging)", isOn: $model.values.filterAllPen)
                             .disabled(model.values.hoverDeadband <= 0)
-                        Text("Suggested starting point: 0.10 mm with spike rejection. Zero disables the deadband and spike filter. Pen contact bypasses the hover filter. Pen scrolling uses it only when enabled above.")
+                        Toggle("Apply noise filtering while pen-scrolling", isOn: $model.values.scrollNoise)
+                            .disabled(model.values.hoverDeadband <= 0 || model.values.filterAllPen)
+                        Text("Suggested starting point: 0.10 mm with spike rejection. Zero disables the deadband and spike filter. General filtering also covers tip contact, held buttons, dragging and pen scrolling, with one shared coordinate filter. Otherwise, filtering applies to hover and optionally pen scrolling.")
                             .font(.caption).foregroundColor(.secondary)
                     }
                 }.formStyle(.grouped).tabItem { Label("Stability", systemImage: "waveform.path") }

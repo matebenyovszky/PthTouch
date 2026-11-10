@@ -18,7 +18,7 @@ public sealed class PenJoystickScroll
     }
 
     public void Update(Vector2 positionMm, bool pressed, double now, Vector2 halfSizeMm,
-        Vector2 maximumPixelsPerSecond, float deadzoneMm, float exponent, bool invert)
+        Vector2 maximumPixelsPerSecond, float deadzoneMm, float exponent, bool invert, float edgeBoost = 1)
     {
         if (!pressed || !double.IsFinite(now) || !float.IsFinite(positionMm.X) || !float.IsFinite(positionMm.Y))
         {
@@ -37,12 +37,17 @@ public sealed class PenJoystickScroll
             float.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
         halfSizeMm = new(Safe(halfSizeMm.X, 20, 1, 100), Safe(halfSizeMm.Y, 20, 1, 100));
         deadzoneMm = Safe(deadzoneMm, 1, 0, MathF.Min(halfSizeMm.X, halfSizeMm.Y) * .9f);
-        exponent = Safe(exponent, 2, 1, 4);
+        exponent = Safe(exponent, 2, 1, 12);
+        edgeBoost = Safe(edgeBoost, 1, 1, 10);
         Vector2 delta = positionMm - origin;
         float Axis(float offset, float halfSize, float maximum)
         {
             float fraction = Math.Clamp((MathF.Abs(offset) - deadzoneMm) / (halfSize - deadzoneMm), 0, 1);
-            return MathF.Sign(offset) * MathF.Pow(fraction, exponent) * Safe(maximum, 1200, 0, 10000);
+            float edge = Math.Clamp((fraction - .65f) / .35f, 0, 1);
+            edge = edge * edge * (3 - 2 * edge);
+            float boost = 1 + (edgeBoost - 1) * edge;
+            return MathF.Sign(offset) * MathF.Pow(fraction, exponent) *
+                Safe(maximum, 1200, 0, 100000) * boost;
         }
         // Match the existing macOS pen-scroll direction: moving down/right
         // scrolls the document down/right unless explicitly reversed.

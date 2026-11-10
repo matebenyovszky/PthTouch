@@ -35,6 +35,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private System.Threading.Timer? joystickTimer;
     private Vector2? joystickAnchor;
     private bool disposed;
+    private readonly PointerAcceleration penAcceleration = new(), touchAcceleration = new();
     public bool EnableJoystickTimer { get; set; } = true;
 
     // Public for deterministic output tests; the host uses the native default.
@@ -45,6 +46,9 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
 
     [BooleanProperty("Upper pen button tap = middle click", ""), DefaultPropertyValue(false)]
     public bool UpperButtonTapMiddleClick { get; set; }
+
+    [BooleanProperty("Filter all pen movement", ""), DefaultPropertyValue(false)]
+    public bool FilterAllPenMovement { get; set; }
 
     [BooleanProperty("Filter pen-scroll noise", ""), DefaultPropertyValue(false)]
     public bool FilterPenScrollNoise { get; set; }
@@ -69,6 +73,24 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
 
     [Property("Joystick acceleration curve"), DefaultPropertyValue(2f)]
     public float JoystickExponent { get; set; } = 2;
+
+    [Property("Joystick outer-edge speed boost"), DefaultPropertyValue(1f)]
+    public float JoystickEdgeBoost { get; set; } = 1;
+
+    [BooleanProperty("Velocity-based pen sensitivity", ""), DefaultPropertyValue(false)]
+    public bool PenVelocityAcceleration { get; set; }
+
+    [BooleanProperty("Velocity-based touch sensitivity", ""), DefaultPropertyValue(false)]
+    public bool TouchVelocityAcceleration { get; set; }
+
+    [Property("Slow movement sensitivity multiplier"), DefaultPropertyValue(.9f)]
+    public float AccelerationSlowGain { get; set; } = .9f;
+
+    [Property("Fast movement sensitivity multiplier"), DefaultPropertyValue(1.35f)]
+    public float AccelerationFastGain { get; set; } = 1.35f;
+
+    [Property("Full acceleration speed"), DefaultPropertyValue(150f), Unit("mm/s")]
+    public float AccelerationTransitionSpeed { get; set; } = 150;
 
     [BooleanProperty("Reverse joystick scrolling", ""), DefaultPropertyValue(false)]
     public bool JoystickInvertScroll { get; set; }
@@ -130,6 +152,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 hoverDeadband.Reset();
                 scrollDeadband.Reset();
                 StopJoystick();
+                penAcceleration.Reset();
             }
             else if (deviceReport is ITabletReport pen)
             {
@@ -158,12 +181,12 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 bool middleClick = penButtonTap.Update(pen.Position, mmPerUnit, upper,
                     pen.PenButtons.Length > 0 && pen.PenButtons[0], pen.Pressure, now,
                     UpperButtonTapMiddleClick && (hasScrollFilter || PenJoystickScrolling));
-                if (FilterPenScrollNoise && upper && (hasScrollFilter || PenJoystickScrolling))
+                if (!FilterAllPenMovement && FilterPenScrollNoise && upper && (hasScrollFilter || PenJoystickScrolling))
                     pen.Position = scrollDeadband.Filter(pen.Position, mmPerUnit,
                         Math.Clamp(HoverJitterDeadband, 0, 1), true, RejectHoverSpikes);
                 pen.Position = hoverDeadband.Filter(pen.Position, mmPerUnit,
                     Math.Clamp(HoverJitterDeadband, 0, 1),
-                    !farHover && pen.Pressure == 0 && !pen.PenButtons.Any(x => x),
+                    !farHover && (FilterAllPenMovement || (pen.Pressure == 0 && !pen.PenButtons.Any(x => x))),
                     RejectHoverSpikes);
                 Vector2 position = pen.Position;
                 if (farHover)
@@ -179,7 +202,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                         joystick.Update(position * mmPerUnit, true, now,
                             new(JoystickHalfWidthMm, JoystickHalfHeightMm),
                             new(JoystickMaxSpeedX, JoystickMaxSpeedY), JoystickDeadzoneMm,
-                            JoystickExponent, JoystickInvertScroll);
+                            JoystickExponent, JoystickInvertScroll, JoystickEdgeBoost);
                         if (EnableJoystickTimer)
                         {
                             joystickTimer ??= new System.Threading.Timer(EmitJoystickScroll, null,
@@ -236,9 +259,23 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         {
             transformed.Position = Vector2.Zero;
             suppressNextPenDelta = false;
+            penAcceleration.Reset();
+        }
+        else
+        {
+            bool eligible = !upperPenButton && report is ITabletReport pen &&
+                pen.Pressure == 0 && !pen.PenButtons.Any(x => x);
+            transformed.Position = penAcceleration.Apply(transformed.Position,
+                PhysicalDelta(transformed.Position), Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency,
+                PenVelocityAcceleration && eligible, AccelerationSlowGain,
+                AccelerationFastGain, AccelerationTransitionSpeed);
         }
         return transformed;
     }
+
+    private Vector2 PhysicalDelta(Vector2 pixels) => new(
+        Sensitivity.X > 0 ? pixels.X / Sensitivity.X : 0,
+        Sensitivity.Y > 0 ? pixels.Y / Sensitivity.Y : 0);
 
     private void HandleTouch(ITouchReport report, double now)
     {
@@ -292,9 +329,13 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         if (TapToClick && action.Tap != TapButton.None)
             Clicker.Click(action.Tap, now);
 
-        if (action.Cursor != Vector2.Zero)
+        Vector2 cursor = touchAcceleration.Apply(action.Cursor, PhysicalDelta(action.Cursor), now,
+            TouchVelocityAcceleration && count == 1 && now >= penUntil &&
+            !touchDragging && action.Drag == DragChange.None,
+            AccelerationSlowGain, AccelerationFastGain, AccelerationTransitionSpeed);
+        if (cursor != Vector2.Zero)
         {
-            Vector2 delta = Vector2.Transform(action.Cursor,
+            Vector2 delta = Vector2.Transform(cursor,
                 Matrix3x2.CreateRotation(-Rotation * MathF.PI / 180));
             if (touchDragging)
                 Clicker.MoveDrag(delta);

@@ -585,6 +585,112 @@ configuringMode.Read(ScrollPen(1200, false));
 Check(configuringPointer.Moves == movesAfterDispose,
     "A disposed output mode must ignore reports while the host replaces it");
 
+var edgeStick = new PenJoystickScroll();
+Vector2 boostedReach = new(20), boostedMax = new(2200);
+void EdgeAt(float x, double time, float boost) => edgeStick.Update(new(x, 0), true, time,
+    boostedReach, boostedMax, 1, 3, false, boost);
+EdgeAt(0, 0, 4); EdgeAt(20, .01, 4);
+Check(MathF.Abs(edgeStick.Step(.02).X) >= 175,
+    "Edge boost must multiply the actual edge speed, independently of the response exponent");
+EdgeAt(100, .03, 4);
+Check(MathF.Abs(edgeStick.Step(.04).X) <= 177,
+    "Even boosted motion must stay capped outside the joystick field");
+edgeStick.Reset(); EdgeAt(0, 1, 1); EdgeAt(10, 1.01, 1);
+float unboostedCentre = edgeStick.Step(1.02).X;
+edgeStick.Reset(); EdgeAt(0, 2, 10); EdgeAt(10, 2.01, 10);
+Check(edgeStick.Step(2.02).X == unboostedCentre,
+    "Outer-edge boost must preserve the inner 65 percent of the response curve");
+edgeStick.Reset(); EdgeAt(0, 3, 1); EdgeAt(20, 3.01, 1);
+Check(MathF.Abs(edgeStick.Step(3.02).X) <= 45,
+    "A boost of one must preserve the previous joystick behaviour");
+edgeStick.Reset();
+edgeStick.Update(Vector2.Zero, true, 4, new(20), new(50000), 1, 9, false, 2);
+edgeStick.Update(new(20, 0), true, 4.01, new(20), new(50000), 1, 9, false, 2);
+Check(MathF.Abs(edgeStick.Step(4.02).X) >= 999,
+    "Higher base speeds and response exponents must be accepted without the old limits");
+
+var acceleration = new PointerAcceleration();
+Vector2 Accelerated(Vector2 delta, double time, bool enabled = true) =>
+    acceleration.Apply(delta * 22, delta, time, enabled, .9f, 1.35f, 150);
+Check(Accelerated(Vector2.One, 0, false) == new Vector2(22),
+    "Disabled acceleration must preserve fixed sensitivity exactly");
+Accelerated(Vector2.Zero, 1);
+float slowMotion = Accelerated(new(.01f, 0), 1.01).X / .22f;
+Check(slowMotion >= .9f && slowMotion < .91f,
+    "Slow motion must use the configured precision multiplier");
+float fastMotion = Accelerated(new(3, 0), 1.02).X / 66;
+Check(fastMotion > slowMotion && fastMotion <= 1.35f,
+    "Fast motion must immediately travel farther with a bounded smooth gain");
+Check(Accelerated(Vector2.Zero, 1.03) == Vector2.Zero,
+    "Speed smoothing must never create delayed cursor drift from zero displacement");
+Check(Accelerated(new(1, 0), 2).X <= 22,
+    "A long pause must reset speed rather than replay a previous fast gain");
+acceleration.Reset(); Accelerated(Vector2.Zero, 3);
+var diagonalAcceleration = Accelerated(new(1, 2), 3.01);
+Check(MathF.Abs(diagonalAcceleration.Y - 2 * diagonalAcceleration.X) < .001f,
+    "Acceleration must preserve movement direction");
+float SteadyGain(double interval)
+{
+    var rate = new PointerAcceleration(); rate.Apply(Vector2.Zero, Vector2.Zero, 0, true, .9f, 1.35f, 150);
+    Vector2 result = default;
+    for (int i = 1; i <= (int)(.2 / interval); i++)
+        result = rate.Apply(new(1, 0), new((float)(interval * 75), 0), i * interval, true, .9f, 1.35f, 150);
+    return result.X;
+}
+Check(MathF.Abs(SteadyGain(.005) - SteadyGain(.01)) < .001f,
+    "The gain curve must depend on physical speed, not the tablet report rate");
+var acceleratedPointer = new RecordingPointer();
+var acceleratedMode = new TrackpadRelativeMode { Pointer = acceleratedPointer, Clicker = new RecordingClicker(),
+    Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100), PenVelocityAcceleration = true,
+    AccelerationSlowGain = .5f, AccelerationFastGain = .5f };
+acceleratedMode.Read(ScrollPen(1000, false)); acceleratedMode.Read(ScrollPen(1000, false));
+acceleratedMode.Read(ScrollPen(1100, false));
+Check(MathF.Abs(acceleratedPointer.LastPosition.X - 10) < .001f,
+    "The actual pen output must apply enabled velocity sensitivity after the relative transform");
+acceleratedMode.Read(new PenReport(new(1200, 1000), true) { Pressure = 1 });
+Check(MathF.Abs(acceleratedPointer.LastPosition.X - 20) < .001f,
+    "Pen contact must preserve unaccelerated drawing movement");
+acceleratedMode.Read(ScrollPen(1300, true));
+Check(MathF.Abs(acceleratedPointer.LastPosition.X - 20) < .001f,
+    "Side-button handling must bypass cursor acceleration");
+acceleratedMode.Dispose();
+var acceleratedTouchPointer = new RecordingPointer();
+var acceleratedTouch = new TrackpadRelativeMode { Pointer = acceleratedTouchPointer, Clicker = new RecordingClicker(),
+    Sensitivity = new(20), TouchVelocityAcceleration = true, AccelerationSlowGain = .5f, AccelerationFastGain = .5f };
+acceleratedTouch.Read(new TouchReport([Point(0, 100, 100)]));
+acceleratedTouch.Read(new TouchReport([Point(0, 120, 100)]));
+Check(MathF.Abs(acceleratedTouchPointer.LastPosition.X - 20 * (325.12f / 4095) * 10) < .001f,
+    "One-finger pointer output must use its independently enabled acceleration");
+acceleratedTouch.Dispose();
+
+var allFilterPointer = new RecordingPointer();
+var allFilterMode = new TrackpadRelativeMode { Pointer = allFilterPointer, Clicker = new RecordingClicker(),
+    Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100), HoverJitterDeadband = .1f,
+    RejectHoverSpikes = true, FilterAllPenMovement = true };
+allFilterMode.Read(ScrollPen(1000, false));
+allFilterMode.Read(new PenReport(new(1025, 1000), true) { Pressure = 100 });
+Check(allFilterPointer.LastPosition == Vector2.Zero,
+    "General pen filtering must reject a small spike while the tip is pressed");
+allFilterMode.Read(new PenReport(new(1000, 1000), true) { Pressure = 100, PenButtons = [true, false] });
+Check(allFilterPointer.LastPosition == Vector2.Zero,
+    "Holding a normal side button must not bypass the general noise filter");
+allFilterMode.Read(new PenReport(new(1100, 1000), true) { Pressure = 100 });
+Check(allFilterPointer.LastPosition.X > 0,
+    "Deliberate dragging must pass immediately through the general pen filter");
+allFilterMode.Read(new PenReport(new(1102, 1000), true));
+Check(allFilterPointer.LastPosition == Vector2.Zero,
+    "Releasing contact must not replay jitter or change the filter anchor");
+allFilterMode.Dispose();
+var sharedScrollSink = new ScrollBinding.ScrollBindingFilter();
+var sharedScrollMode = new TrackpadRelativeMode { Pointer = new RecordingPointer(), Clicker = new RecordingClicker(),
+    Sensitivity = new(20), Elements = [sharedScrollSink], HoverJitterDeadband = .1f,
+    RejectHoverSpikes = true, FilterAllPenMovement = true, FilterPenScrollNoise = true };
+sharedScrollMode.Read(ScrollPen(1000, false)); sharedScrollMode.Read(ScrollPen(1000, true));
+sharedScrollMode.Read(ScrollPen(1025, true)); sharedScrollMode.Read(ScrollPen(1030, true));
+Check(sharedScrollSink.SeenPositions.Last().X == 1025,
+    "General pen filtering and scroll-only filtering must not stack two median windows");
+sharedScrollMode.Dispose();
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport

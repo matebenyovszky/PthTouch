@@ -27,7 +27,10 @@ struct SettingsChecks {
         preferences.resetMs = 250; preferences.penScrollY = 1.25
         preferences.interactiveDesktop = true; preferences.desktopTravel = 80
         preferences.joystick = true; preferences.joystickWidth = 25; preferences.joystickHeight = 30
-        preferences.joystickSpeedY = 2400; preferences.joystickReverse = true; preferences.scrollNoise = true
+        preferences.edgeBoost = 4; preferences.joystickCurve = 9
+        preferences.filterAllPen = true; preferences.penAcceleration = true; preferences.touchAcceleration = true
+        preferences.slowGain = 0.8; preferences.fastGain = 1.6; preferences.accelerationSpeed = 200
+        preferences.joystickSpeedY = 50000; preferences.joystickReverse = true; preferences.scrollNoise = true
         let merged = try document.merging(preferences)
         let roundTrip = try ProfileSettings(document: merged).read()
         check(roundTrip.matches(preferences), "Save/reload must preserve every exposed control")
@@ -44,6 +47,8 @@ struct SettingsChecks {
         check((upper["Settings"] as! [[String: Any]]).contains { $0["Property"] as? String == "KineticSetting" }, "Preserve unrelated upper-button options")
         var invalid = preferences; invalid.hoverDeadband = .nan
         do { _ = try document.merging(invalid); check(false, "Reject non-finite input") } catch { check(true, "Rejected non-finite input") }
+        var invertedGain = preferences; invertedGain.slowGain = 1.8; invertedGain.fastGain = 1.2
+        do { _ = try document.merging(invertedGain); check(false, "Reject inverted acceleration range") } catch { check(true, "Rejected inverted acceleration range") }
         let baseline = PthPreferences(); var external = baseline, edited = baseline
         external.xSensitivity = 35; external.desktopTravel = 90; edited.pinch = true
         let combined = external.applyingChanges(from: baseline, to: edited)

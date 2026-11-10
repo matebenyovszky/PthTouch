@@ -9,14 +9,16 @@ struct PthPreferences: Equatable {
     var joystick = false, joystickReverse = false, scrollNoise = false
     var joystickWidth = 20.0, joystickHeight = 20.0, joystickSpeedX = 600.0, joystickSpeedY = 1200.0
     var joystickDeadzone = 1.0, joystickCurve = 2.0
+    var edgeBoost = 1.0, slowGain = 0.9, fastGain = 1.35, accelerationSpeed = 150.0
+    var penAcceleration = false, touchAcceleration = false, filterAllPen = false
     var penScrollX = 0.5, penScrollY = 1.0, penScrollInvert = false, penScrollFreeze = true
     func applyingChanges(from baseline: PthPreferences, to edited: PthPreferences) -> PthPreferences {
         var result = self
         let numbers: [WritableKeyPath<PthPreferences, Double>] = [
-            \.xSensitivity, \.ySensitivity, \.resetMs, \.touchScroll, \.hoverDeadband, \.penScrollX, \.penScrollY, \.desktopTravel, \.joystickWidth, \.joystickHeight, \.joystickSpeedX, \.joystickSpeedY, \.joystickDeadzone, \.joystickCurve]
+            \.xSensitivity, \.ySensitivity, \.resetMs, \.touchScroll, \.hoverDeadband, \.penScrollX, \.penScrollY, \.desktopTravel, \.joystickWidth, \.joystickHeight, \.joystickSpeedX, \.joystickSpeedY, \.joystickDeadzone, \.joystickCurve, \.edgeBoost, \.slowGain, \.fastGain, \.accelerationSpeed]
         let toggles: [WritableKeyPath<PthPreferences, Bool>] = [
             \.tap, \.drag, \.natural, \.swipes, \.pinch, \.limitHover, \.rejectSpikes,
-            \.middleTap, \.penScrollInvert, \.penScrollFreeze, \.interactiveDesktop, \.joystick, \.joystickReverse, \.scrollNoise]
+            \.middleTap, \.penScrollInvert, \.penScrollFreeze, \.interactiveDesktop, \.joystick, \.joystickReverse, \.scrollNoise, \.penAcceleration, \.touchAcceleration, \.filterAllPen]
         for key in numbers where baseline[keyPath: key] != edited[keyPath: key] { result[keyPath: key] = edited[keyPath: key] }
         for key in toggles where baseline[keyPath: key] != edited[keyPath: key] { result[keyPath: key] = edited[keyPath: key] }
         return result
@@ -24,11 +26,11 @@ struct PthPreferences: Equatable {
     func matches(_ other: PthPreferences) -> Bool {
         let numbers = [(xSensitivity, other.xSensitivity), (ySensitivity, other.ySensitivity),
             (resetMs, other.resetMs), (touchScroll, other.touchScroll), (hoverDeadband, other.hoverDeadband),
-            (penScrollX, other.penScrollX), (penScrollY, other.penScrollY), (desktopTravel, other.desktopTravel), (joystickWidth, other.joystickWidth), (joystickHeight, other.joystickHeight), (joystickSpeedX, other.joystickSpeedX), (joystickSpeedY, other.joystickSpeedY), (joystickDeadzone, other.joystickDeadzone), (joystickCurve, other.joystickCurve)]
+            (penScrollX, other.penScrollX), (penScrollY, other.penScrollY), (desktopTravel, other.desktopTravel), (joystickWidth, other.joystickWidth), (joystickHeight, other.joystickHeight), (joystickSpeedX, other.joystickSpeedX), (joystickSpeedY, other.joystickSpeedY), (joystickDeadzone, other.joystickDeadzone), (joystickCurve, other.joystickCurve), (edgeBoost, other.edgeBoost), (slowGain, other.slowGain), (fastGain, other.fastGain), (accelerationSpeed, other.accelerationSpeed)]
         return numbers.allSatisfy { abs($0.0 - $0.1) < 0.0001 } &&
             tap == other.tap && drag == other.drag && natural == other.natural && swipes == other.swipes &&
             pinch == other.pinch && limitHover == other.limitHover && rejectSpikes == other.rejectSpikes &&
-            middleTap == other.middleTap && joystick == other.joystick && joystickReverse == other.joystickReverse && scrollNoise == other.scrollNoise && interactiveDesktop == other.interactiveDesktop && penScrollInvert == other.penScrollInvert && penScrollFreeze == other.penScrollFreeze
+            filterAllPen == other.filterAllPen && penAcceleration == other.penAcceleration && touchAcceleration == other.touchAcceleration && middleTap == other.middleTap && joystick == other.joystick && joystickReverse == other.joystickReverse && scrollNoise == other.scrollNoise && interactiveDesktop == other.interactiveDesktop && penScrollInvert == other.penScrollInvert && penScrollFreeze == other.penScrollFreeze
     }
 }
 
@@ -83,6 +85,13 @@ struct ProfileSettings {
         p.joystickSpeedY = Self.number(values["JoystickMaxSpeedY"], p.joystickSpeedY)
         p.joystickDeadzone = Self.number(values["JoystickDeadzoneMm"], p.joystickDeadzone)
         p.joystickCurve = Self.number(values["JoystickExponent"], p.joystickCurve)
+        p.edgeBoost = Self.number(values["JoystickEdgeBoost"], p.edgeBoost)
+        p.slowGain = Self.number(values["AccelerationSlowGain"], p.slowGain)
+        p.fastGain = Self.number(values["AccelerationFastGain"], p.fastGain)
+        p.accelerationSpeed = Self.number(values["AccelerationTransitionSpeed"], p.accelerationSpeed)
+        p.filterAllPen = values["FilterAllPenMovement"] as? Bool ?? p.filterAllPen
+        p.penAcceleration = values["PenVelocityAcceleration"] as? Bool ?? p.penAcceleration
+        p.touchAcceleration = values["TouchVelocityAcceleration"] as? Bool ?? p.touchAcceleration
         p.joystick = values["PenJoystickScrolling"] as? Bool ?? p.joystick
         p.joystickReverse = values["JoystickInvertScroll"] as? Bool ?? p.joystickReverse
         p.scrollNoise = values["FilterPenScrollNoise"] as? Bool ?? p.scrollNoise
@@ -99,10 +108,13 @@ struct ProfileSettings {
     func merging(_ p: PthPreferences) throws -> [String: Any] {
         for (value, low, high) in [(p.xSensitivity, 0.1, 200.0), (p.ySensitivity, 0.1, 200.0),
             (p.resetMs, 1.0, 5000.0), (p.touchScroll, 0.1, 100.0), (p.hoverDeadband, 0.0, 1.0),
-            (p.penScrollX, 0.0, 100.0), (p.penScrollY, 0.0, 100.0), (p.desktopTravel, 20.0, 160.0), (p.joystickWidth, 1.0, 100.0), (p.joystickHeight, 1.0, 100.0), (p.joystickSpeedX, 0.0, 10000.0), (p.joystickSpeedY, 0.0, 10000.0), (p.joystickDeadzone, 0.0, 90.0), (p.joystickCurve, 1.0, 4.0)] {
+            (p.penScrollX, 0.0, 100.0), (p.penScrollY, 0.0, 100.0), (p.desktopTravel, 20.0, 160.0), (p.joystickWidth, 1.0, 100.0), (p.joystickHeight, 1.0, 100.0), (p.joystickSpeedX, 0.0, 100000.0), (p.joystickSpeedY, 0.0, 100000.0), (p.joystickDeadzone, 0.0, 90.0), (p.joystickCurve, 1.0, 12.0), (p.edgeBoost, 1.0, 10.0), (p.slowGain, 0.2, 2.0), (p.fastGain, 0.2, 5.0), (p.accelerationSpeed, 10.0, 1000.0)] {
             guard value.isFinite && value >= low && value <= high else {
                 throw SettingsError.message("A number is outside the supported range. Check the sensitivity and stability fields.")
             }
+        }
+        guard p.fastGain >= p.slowGain else {
+            throw SettingsError.message("Fast movement sensitivity must be at least the slow movement sensitivity.")
         }
         guard p.joystickDeadzone < min(p.joystickWidth, p.joystickHeight) else {
             throw SettingsError.message("The joystick centre deadzone must be smaller than its reach.")
@@ -127,6 +139,8 @@ struct ProfileSettings {
             "RejectHoverSpikes": p.rejectSpikes, "UpperButtonTapMiddleClick": p.middleTap,
             "InteractiveDesktopSwipes": p.interactiveDesktop, "DesktopSwipeDistanceMm": p.desktopTravel,
             "JoystickHalfWidthMm": p.joystickWidth, "JoystickHalfHeightMm": p.joystickHeight, "JoystickMaxSpeedX": p.joystickSpeedX, "JoystickMaxSpeedY": p.joystickSpeedY, "JoystickDeadzoneMm": p.joystickDeadzone, "JoystickExponent": p.joystickCurve,
+            "FilterAllPenMovement": p.filterAllPen, "JoystickEdgeBoost": p.edgeBoost, "PenVelocityAcceleration": p.penAcceleration, "TouchVelocityAcceleration": p.touchAcceleration,
+            "AccelerationSlowGain": p.slowGain, "AccelerationFastGain": p.fastGain, "AccelerationTransitionSpeed": p.accelerationSpeed,
             "PenJoystickScrolling": p.joystick, "JoystickInvertScroll": p.joystickReverse, "FilterPenScrollNoise": p.scrollNoise])
         profile["OutputMode"] = mode
         if hasPenScroll, var bindings = profile["Bindings"] as? [String: Any],

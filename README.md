@@ -13,8 +13,10 @@ A macOS output-mode plugin for OpenTabletDriver that combines relative pen input
 - An optional short stationary press/release of the upper pen-scroll button sends a middle click, for example to open links in a new tab. Scrolling, pressure, other-button use, long holds and proximity loss cancel it.
 - Optional three-finger swipes switch Spaces/full-screen apps horizontally, open Mission Control upward, and show the current application's windows downward. By default these use system shortcuts; experimental horizontal transitions can instead follow the fingers.
 - Optional experimental two-finger pinch sends native magnification events to compatible apps, separate from two-finger scrolling.
+- Optional velocity-based sensitivity for pen hover and one-finger touch, with independent switches and configurable slow/fast multipliers.
+- Optional general pen noise filtering covers tip contact, held buttons and dragging as well as hover and pen scrolling.
 - Optional near-proximity gating suppresses unreliable far-hover coordinates while preserving pen/button releases. Re-entry establishes a fresh relative origin.
-- Optional three-report median spike rejection removes isolated hover outliers before the deadband. It delays small continuous hover movement by one report (about 5 ms at 200 Hz); movements larger than four times the deadband bypass it immediately. Contact and side buttons normally bypass both filters. The option defaults to off; pen scrolling can opt into a separate filter below.
+- Optional three-report median spike rejection removes isolated hover outliers before the deadband. It delays small continuous hover movement by one report (about 5 ms at 200 Hz); movements larger than four times the deadband bypass it immediately. Contact and side buttons normally bypass both filters unless general pen filtering is enabled. The option defaults to off; pen scrolling can opt into a separate filter below.
 - An opt-in spatial hover deadband suppresses tiny stationary jitter without temporal averaging. Pen pressure and side-button use normally bypass it; the setting defaults to 0 mm (off). For stationary PTH-851 noise, a 0.10 mm deadband with spike rejection worked well in a 30-second replay at 20 px/mm; results depend on hardware and environment. Without spike rejection, a 0.04 mm threshold corresponds to 0.8 px at 20 px/mm.
 
 ## Requirements and tested hardware
@@ -109,10 +111,14 @@ A short stationary press/release can still send a middle click.
 
 Horizontal and vertical reach are measured **from the centre**. The default
 20 mm each way makes a 40 × 40 mm field. A 1 mm centre deadzone and a quadratic
-acceleration curve give fine control near the centre; maximum speeds default
+acceleration curve give fine control near the centre; base speeds default
 to 600 px/s horizontally and 1200 px/s vertically. Reach, maximum speed,
 deadzone, acceleration and direction are adjustable. Outside the field, speed
-stays capped. No cursor overlay is drawn.
+stays capped. The optional **Edge speed boost** (1–10×, default 1×) smoothly
+increases speed over the outer 35% of travel after the centre deadzone; final
+edge speed is the configured base speed multiplied by that boost. The base-speed
+range is 0–100,000 px/s. **Response curve** accepts 1–12: larger values keep the
+inner field slower and do not change the final edge speed. No cursor overlay is drawn.
 
 This mode is built into PthTouch and does not require Scroll Bindings. An
 existing upper-button Scroll Bindings assignment is suppressed while joystick
@@ -130,6 +136,32 @@ coordinates before either scroll handler, while preserving button transitions
 and the middle-click recognizer's raw movement test. It is off by default.
 The existing 0.10 mm deadband and spike rejection are a useful starting point.
 Large movements pass immediately; small continuous motion may wait one report.
+
+### General pen noise filtering
+
+Enable **Filter all pen movement (including dragging)** on the **Stability** tab
+to apply the same deadband and optional median-spike filter to tip-down motion,
+held normal buttons, scrollbar/window dragging, hover and pen scrolling. This
+uses a single coordinate filter; the scroll-only filter is bypassed so two
+median windows never stack. It defaults to off to preserve unfiltered drawing
+behaviour for existing users. Pressure and button values continue through the
+normal pipeline; zero deadband disables coordinate filtering.
+
+## Optional velocity-based pointer sensitivity
+
+The **Pen → Velocity-based sensitivity** section has independent switches for
+pen hover and one-finger touch. Both default to off. Slow and fast multipliers
+scale the ordinary X/Y sensitivity; defaults are 0.90× and 1.35×, with full gain
+at 150 mm/s. Slow multiplier accepts 0.2–2×, fast multiplier up to 5× (at least
+the slow value), and the transition speed accepts 10–1000 mm/s.
+
+The curve is continuous and direction-preserving. Only the speed estimate is
+smoothed (8 ms time constant); coordinates are emitted immediately, with no
+queued motion or drift after stopping. The calculation uses physical mm/s,
+independent of pointer sensitivity and report rate. Pen contact, side buttons,
+touch dragging and scrolling keep fixed sensitivity. General jitter filtering
+is a separate option and can still apply during these actions. Turning both
+velocity switches off restores the original fixed-sensitivity behaviour.
 
 ## Build and checks
 
