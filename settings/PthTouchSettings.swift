@@ -139,7 +139,7 @@ struct SettingsView: View {
                     }
                     Section("Eraser and flick gestures (experimental)") {
                         Toggle("Eraser drag deletes selected text", isOn: $model.values.eraserDelete)
-                        Text("Select text with the eraser end and lift. Deletes only when the app exposes a non-empty text selection through Accessibility; unsupported apps are skipped.")
+                        Text("Select text with the eraser end and lift. Deletes only an editable text selection exposed through Accessibility. Sent chat messages and other read-only text are skipped; Electron apps may need one warm-up gesture.")
                             .font(.caption).foregroundColor(.secondary)
                         Toggle("Strong pressure + right flick = Undo", isOn: $model.values.rightFlick)
                         Toggle("Strong pressure + left flick = open AI", isOn: $model.values.leftFlick)

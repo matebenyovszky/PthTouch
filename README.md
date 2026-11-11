@@ -207,9 +207,10 @@ integration and the SwiftUI companion require a Windows implementation.
 
 - **Eraser drag:** select text with the pen's eraser end, then lift. After
   mouse-up, Backspace is sent only if Accessibility exposes a non-empty selected
-  text range or string in the same focused app. A timely proximity-loss report
-  can also finish an eraser drag when no final zero-pressure packet arrives. Unsupported selections, taps and window
-  dragging are skipped. Eraser tool identity is remembered across the separate
+  text range or string in an editable field in the same focused app. Read-only
+  text, including sent chat messages, is skipped. A timely proximity-loss report
+  can also finish an eraser drag when no final zero-pressure packet arrives. Unsupported selections, taps and window dragging
+  are skipped. Eraser tool identity is remembered across the separate
   Wacom tool and pressure reports; eraser contact cannot arm tip clipboard actions.
 - **Right flick:** strong pressure held for 40 ms arms a 650 ms window. Move
   quickly right while changing tilt to send Command+Z. The default requirements
@@ -223,12 +224,20 @@ integration and the SwiftUI companion require a Windows implementation.
   (`com.openai.chat`), Claude, ChatGPT in browser and Claude in browser. The
   corresponding desktop app must already be installed. No app is installed by
   the gesture.
+
 AI opening does not read or transfer selected text, inspect the AI composer,
 or change the clipboard. Undo and AI opening obtain the foreground app through
 NSWorkspace; they do not depend on Accessibility text-field focus. Only eraser
 deletion requires Accessibility selection support. It tries the foreground
 application's focused element, then system focus, with a bounded messaging
-timeout. Unsupported or empty selections are skipped.
+timeout. If focus is unavailable, it requests the app's `AXManualAccessibility`
+attribute using the [documented Electron integration](https://github.com/electron/electron/blob/main/docs/tutorial/accessibility.md),
+then retries up to three times at 100 ms intervals. This changes no macOS
+permissions; unsupported attributes and missing OS access do not trigger a retry.
+Each attempt rechecks the foreground app, action generation, selection and
+editable-value support before Delete. Empty/read-only selections are skipped,
+and switching apps or unloading cancels pending attempts. The first eraser
+gesture may serve as a renderer accessibility warm-up in some apps.
 
 Recognized flicks release the pen tip before dispatching the action, suppress
 additional tip events until physical release, and cancel competing copy/paste.

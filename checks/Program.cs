@@ -927,6 +927,34 @@ Check(extraSink.PenActions.Last() == PenGestureAction.OpenAI && extraSink.Clipbo
 extraMode.Dispose();
 Check(extraSink.PenCancels > 0, "Unloading must cancel delayed native actions");
 
+// Reproduce the native failure without querying apps or posting input: only
+// absent focus can request a renderer-tree warm-up; empty/read-only fields skip.
+int retryRequests = 0, retryDelays = 0;
+async Task<EraserDeleteResult> Retry(params EraserDeleteResult[] outcomes)
+{
+    retryRequests = retryDelays = 0;
+    var sequence = new Queue<EraserDeleteResult>(outcomes);
+    return await EraserDeleteRetry.RunAsync(() => sequence.Dequeue(),
+        () => { retryRequests++; return true; },
+        () => { retryDelays++; return Task.CompletedTask; });
+}
+Check(await Retry(EraserDeleteResult.NoFocus, EraserDeleteResult.Deleted) == EraserDeleteResult.Deleted &&
+    retryRequests == 1 && retryDelays == 1, "Lazy renderer focus must receive one accessibility request and a bounded retry");
+Check(await Retry(EraserDeleteResult.NotEditable) == EraserDeleteResult.NotEditable && retryRequests == 0 && retryDelays == 0,
+    "Read-only text must not trigger an accessibility retry or unconditional Delete");
+Check(await Retry(EraserDeleteResult.NoSelection) == EraserDeleteResult.NoSelection && retryRequests == 0,
+    "An empty selection must never turn into Delete after a warm-up");
+Check(await Retry(EraserDeleteResult.NoFocus, EraserDeleteResult.NoFocus, EraserDeleteResult.NoFocus, EraserDeleteResult.NoFocus) == EraserDeleteResult.NoFocus &&
+    retryRequests == 1 && retryDelays == 3, "Persistently missing focus must stop after three retries");
+Check(await Retry(EraserDeleteResult.NoFocus, EraserDeleteResult.Cancelled) == EraserDeleteResult.Cancelled && retryDelays == 1,
+    "App change or unload must cancel a delayed delete attempt");
+Check(await Retry(EraserDeleteResult.NoAccess) == EraserDeleteResult.NoAccess && retryRequests == 0,
+    "Missing OS access must not request a renderer-tree change");
+int unsupportedDelays = 0;
+Check(await EraserDeleteRetry.RunAsync(() => EraserDeleteResult.NoFocus, () => false,
+    () => { unsupportedDelays++; return Task.CompletedTask; }) == EraserDeleteResult.NoFocus && unsupportedDelays == 0,
+    "Unsupported manual accessibility must not keep retrying");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
