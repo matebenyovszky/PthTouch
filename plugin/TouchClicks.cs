@@ -14,8 +14,7 @@ public readonly record struct SwipeShortcut(ushort Key, ulong Flags)
 
 public interface ITouchClicker
 {
-    string? CaptureSelection() => null;
-    bool PenAction(PenGestureAction action, string target, string? selection, bool paste) => false;
+    bool PenAction(PenGestureAction action, string target) => false;
     void CancelPenActions() { }
     bool BeginDictation(bool macParakeet) => false;
     void EndDictation() { }
@@ -56,9 +55,8 @@ public sealed class ClickSequence
 public sealed class MacTouchClicker : ITouchClicker
 {
     private readonly MacPenActions penActions = new();
-    public string? CaptureSelection() => penActions.CaptureSelection();
-    public bool PenAction(PenGestureAction action, string target, string? selection, bool paste) =>
-        penActions.Perform(action, target, selection, paste);
+    public bool PenAction(PenGestureAction action, string target) =>
+        penActions.Perform(action, target);
     public void CancelPenActions() => penActions.Cancel();
     private readonly ClickSequence sequence = new();
     private bool dragging;

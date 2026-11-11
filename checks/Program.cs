@@ -859,8 +859,8 @@ var flickEngine = new PressureFlickGesture();
 FlickUpdate Flick(double t, float x, float tilt = 0, float pressure = .8f, bool cancel = false, float y = 0) =>
     flickEngine.Update(new(x, y), new Vector2(tilt, 0), pressure, cancel, t, true, true);
 Check(Flick(0, 0) == default, "Flick arming needs sustained pressure");
-Check(Flick(.045, 0).CaptureSelection, "AI selection must be captured once at pressure arming");
-Check(!Flick(.055, 2, .1f).CaptureSelection, "Flick motion must not recapture the changing selection");
+Check(Flick(.045, 0).JustArmed, "Sustained pressure must arm the flick");
+Check(!Flick(.055, 2, .1f).JustArmed, "Flick motion must not arm the same gesture again");
 Check(Flick(.08, 8, .2f).Action == PenGestureAction.Undo, "Fast right movement with tilt change must undo");
 Check(Flick(.09, 16, .4f).Action == PenGestureAction.None, "A held flick cannot repeat");
 Flick(.1, 16, pressure: 0); Flick(.12, 0); Flick(.17, 0); Flick(.18, -2, .1f);
@@ -883,8 +883,7 @@ Check(flickEngine.Update(Vector2.Zero, null, 1, false, 8, true, true) == default
 Check(MacPenActions.ResolveTarget("ChatGPT in browser").Url == "https://chatgpt.com/" &&
     MacPenActions.ResolveTarget("ChatGPT/Codex").Bundle == "com.openai.codex" &&
     MacPenActions.ResolveTarget("invalid") == default, "AI targets must use a fixed app/HTTPS allowlist");
-Check(MacPenActions.ComposerLabel("Message ChatGPT") && !MacPenActions.ComposerLabel("Search") &&
-    !MacPenActions.ComposerLabel("Password"), "Only recognizable composer labels qualify for automatic paste");
+
 
 var extraEvents = new List<string>();
 var extraSink = new RecordingClicker { PenEvent = action => extraEvents.Add(action.ToString()) };
@@ -893,7 +892,7 @@ double extraTime = 0;
 var extraMode = new TrackpadRelativeMode { Pointer = extraPointer, Clicker = extraSink,
     Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100), ClockSeconds = () => extraTime,
     EraserDeletesSelection = true, PressureCopySelection = true, PressureDoublePaste = true,
-    RightFlickUndo = true, LeftFlickAI = true, AIPasteSelection = true,
+    RightFlickUndo = true, LeftFlickAI = true,
     Elements = [new ReleaseMarker(extraEvents)] };
 void Extra(double t, float x, uint pressure, float tilt = 0) {
     extraTime = t;
@@ -906,6 +905,15 @@ Check(extraSink.PenActions.SequenceEqual([PenGestureAction.DeleteSelection]) && 
     "Separate eraser identity must reach ordinary pen packets and exclude tip clipboard gestures");
 Check(extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "DeleteSelection"]),
     "Eraser deletion must follow native mouse-up and flush");
+extraMode.Read(new ToolReport(true)); Extra(.3, 1000, 409); Extra(.35, 1800, 409);
+extraTime = .38; extraMode.Read(new OutOfRangeReport());
+Check(extraSink.PenActions.Count == 2 && extraSink.PenActions.Last() == PenGestureAction.DeleteSelection &&
+    extraEvents.TakeLast(2).SequenceEqual(["flush", "DeleteSelection"]),
+    "An eraser leaving range without a zero-pressure packet must finalize only after mouse reset/flush");
+extraMode.Read(new ToolReport(true)); Extra(.5, 1000, 409); Extra(.55, 1800, 409);
+extraTime = .9; extraMode.Read(new OutOfRangeReport());
+Check(extraSink.PenActions.Count == 2, "A stale eraser stream must not delete on a late proximity-loss report");
+extraSink.PenActions.RemoveAt(1);
 extraMode.Read(new ToolReport(false)); Extra(1, 1000, 1600); Extra(1.05, 1000, 1600);
 Extra(1.06, 1400, 1600, 8); Extra(1.09, 2600, 1600, 16);
 Check(extraSink.PenActions.Last() == PenGestureAction.Undo &&
@@ -914,8 +922,8 @@ Extra(1.11, 3000, 1600, 25); Extra(1.14, 3000, 0);
 Check(extraSink.ClipboardActions.Count == 0 && extraSink.PenActions.Count == 2,
     "A captured flick must not leak later clipboard commands or repeat");
 Extra(2, 3000, 1600); Extra(2.05, 3000, 1600); Extra(2.06, 2600, 1600, 8); Extra(2.09, 1400, 1600, 16);
-Check(extraSink.PenActions.Last() == PenGestureAction.OpenAI && extraSink.LastSelection == "test selection",
-    "The AI flick must transfer the selection captured at arming");
+Check(extraSink.PenActions.Last() == PenGestureAction.OpenAI && extraSink.ClipboardActions.Count == 0,
+    "The AI flick must open its target without a clipboard action");
 extraMode.Dispose();
 Check(extraSink.PenCancels > 0, "Unloading must cancel delayed native actions");
 
@@ -944,11 +952,9 @@ sealed class RecordingClicker : ITouchClicker
 {
     public List<PenGestureAction> PenActions = [];
     public Action<PenGestureAction> PenEvent;
-    public string LastSelection;
     public int PenCancels;
-    public string CaptureSelection() => "test selection";
-    public bool PenAction(PenGestureAction action, string target, string selection, bool paste) {
-        PenActions.Add(action); LastSelection = selection; PenEvent?.Invoke(action); return true;
+    public bool PenAction(PenGestureAction action, string target) {
+        PenActions.Add(action); PenEvent?.Invoke(action); return true;
     }
     public void CancelPenActions() => PenCancels++;
     public List<PressureClipboardAction> ClipboardActions = [];

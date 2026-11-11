@@ -10,7 +10,7 @@ struct SettingsChecks {
     static func main() throws {
         let profile: [String: Any] = [
             "Tablet": "Test tablet", "OutputMode": ["Path": ProfileSettings.modePath,
-                "Settings": [["Property": "FutureSetting", "Value": "keep"]]],
+                "Settings": [["Property": "FutureSetting", "Value": "keep"], ["Property": "AIPasteSelection", "Value": true]]],
             "RelativeModeSettings": ["XSensitivity": 20, "YSensitivity": 20,
                 "RelativeRotation": 17, "RelativeResetDelay": "00:00:00.1000000"],
             "Bindings": ["TipActivationThreshold": 1, "PenButtons": [NSNull(),
@@ -29,7 +29,7 @@ struct SettingsChecks {
         preferences.joystick = true; preferences.joystickWidth = 25; preferences.joystickHeight = 30
         preferences.edgeBoost = 4; preferences.joystickCurve = 9
         preferences.pressureCopy = true; preferences.pressurePaste = true; preferences.pressureRise = 22; preferences.pressureDrag = 2.5
-        preferences.eraserDelete = true; preferences.rightFlick = true; preferences.leftFlick = true; preferences.aiPaste = true
+        preferences.eraserDelete = true; preferences.rightFlick = true; preferences.leftFlick = true
         preferences.aiTarget = "ChatGPT in browser"; preferences.flickPressure = 55; preferences.flickDistance = 8
         preferences.flickSpeed = 200; preferences.flickTilt = 20
         preferences.pressureDictation = true; preferences.dictationTarget = "macOS"; preferences.dictationPressure = 65
@@ -46,6 +46,7 @@ struct SettingsChecks {
         check((selected["RelativeModeSettings"] as! [String: Any])["RelativeRotation"] as? Int == 17, "Preserve relative rotation")
         let mode = selected["OutputMode"] as! [String: Any]
         check((mode["Settings"] as! [[String: Any]]).contains { $0["Property"] as? String == "FutureSetting" && $0["Value"] as? String == "keep" }, "Preserve unknown plugin options")
+        check(!(mode["Settings"] as! [[String: Any]]).contains { $0["Property"] as? String == "AIPasteSelection" }, "Remove abandoned AI selection-transfer setting")
         let buttons = (selected["Bindings"] as! [String: Any])["PenButtons"] as! [Any]
         check(buttons[0] is NSNull, "Preserve unassigned lower pen button")
         let upper = buttons[1] as! [String: Any]

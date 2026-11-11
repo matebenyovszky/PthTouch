@@ -146,12 +146,11 @@ struct SettingsView: View {
                         Picker("AI target", selection: $model.values.aiTarget) {
                             ForEach(PthPreferences.aiTargets, id: \.self) { Text($0).tag($0) }
                         }.disabled(!model.values.leftFlick)
-                        Toggle("Transfer selected text to AI", isOn: $model.values.aiPaste).disabled(!model.values.leftFlick)
                         number("Flick pressure threshold", value: $model.values.flickPressure, unit: "%")
                         number("Minimum flick travel", value: $model.values.flickDistance, unit: "mm")
                         number("Minimum flick speed", value: $model.values.flickSpeed, unit: "mm/s")
                         number("Minimum tilt change", value: $model.values.flickTilt, unit: "%")
-                        Text("Press firmly for a moment, then flick within 0.65 s, changing pen tilt. Directions follow the physical tablet. Right sends ⌘Z. Left opens the chosen app or browser page. Selection is captured when pressure arms the gesture; some apps do not expose it, and touching down may clear an earlier selection. Transfer updates the clipboard and pastes only into a recognized, focused AI composer, without sending. Otherwise paste manually. The chosen desktop app must be installed; browser targets use your default browser. Tilt is a fraction of the sensor range, not degrees.")
+                        Text("Press firmly for a moment, then flick within 0.65 s, changing pen tilt. Directions follow the physical tablet. Right sends ⌘Z. Left opens the chosen app or browser page. AI opening does not read or transfer selected text and does not change the clipboard. The chosen desktop app must be installed; browser targets use your default browser. Tilt is a fraction of the sensor range, not degrees.")
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Section("Velocity-based sensitivity (optional)") {

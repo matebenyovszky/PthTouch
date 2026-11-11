@@ -49,7 +49,9 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private bool eraserTool, flickTipSuppressed, previousFlickSuppressed;
     private Vector2? flickAnchor;
     private PenGestureAction pendingPenAction;
-    private string? flickSelection;
+    private Vector2? lastPhysicalPenPosition;
+    private float contactPeak;
+    private Vector2? contactTiltMin, contactTiltMax;
 
     [BooleanProperty("Erase selected text after an eraser drag", ""), DefaultPropertyValue(false)]
     public bool EraserDeletesSelection { get; set; }
@@ -68,8 +70,6 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     public static string[] AITargets => MacPenActions.Targets;
     [Property("AI target"), PropertyValidated(nameof(AITargets)), DefaultPropertyValue("ChatGPT/Codex")]
     public string AITarget { get; set; } = "ChatGPT/Codex";
-    [BooleanProperty("Transfer selected text to AI composer", ""), DefaultPropertyValue(false)]
-    public bool AIPasteSelection { get; set; }
 
     // Public for deterministic output tests; the host uses the native default.
     public ITouchClicker Clicker { get; set; } = new MacTouchClicker();
@@ -200,7 +200,9 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             // Wacom sends tool identity separately from ordinary pressure/tilt packets.
             if (deviceReport is IEraserReport tool && tool.Eraser != eraserTool)
             {
+                EndContactDiagnostic();
                 eraserTool = tool.Eraser;
+                Log.Write("PTH Gestures", eraserTool ? "Eraser tool entered." : "Pen tip entered.", LogLevel.Debug);
                 ResetPenGestures();
                 pressureClipboard.Reset(); pendingClipboard = default;
                 pressureDictation.Reset(); pendingDictation = false;
@@ -208,9 +210,15 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             }
             if (deviceReport is OutOfRangeReport)
             {
+                bool eraserLift = lastPhysicalPenPosition is Vector2 physical &&
+                    eraserSelection.Update(physical, 0, eraserTool, false, now,
+                        EraserDeletesSelection, PressureDragDistanceMm);
+                EndContactDiagnostic();
                 penUntil = 0;
                 eraserTool = false;
                 ResetPenGestures(cancelActions: false);
+                lastPhysicalPenPosition = null;
+                if (eraserLift) pendingPenAction = PenGestureAction.DeleteSelection;
                 reanchorPen = true;
                 lastPenPosition = null;
                 upperPenButton = false;
@@ -266,6 +274,17 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 bool other = pen.PenButtons.Length > 0 && pen.PenButtons[0];
                 float normalPressure = maximumPressure > 0 ? pen.Pressure / maximumPressure : 0;
                 Vector2 physicalPosition = pen.Position * mmPerUnit;
+                lastPhysicalPenPosition = physicalPosition;
+                if (normalPressure > 0 && (RightFlickUndo || LeftFlickAI || EraserDeletesSelection))
+                {
+                    contactPeak = MathF.Max(contactPeak, normalPressure);
+                    if (deviceReport is ITiltReport rawTilt)
+                    {
+                        contactTiltMin = contactTiltMin is Vector2 min ? Vector2.Min(min, rawTilt.Tilt) : rawTilt.Tilt;
+                        contactTiltMax = contactTiltMax is Vector2 max ? Vector2.Max(max, rawTilt.Tilt) : rawTilt.Tilt;
+                    }
+                }
+                else if (normalPressure <= 0) EndContactDiagnostic();
                 if (eraserSelection.Update(physicalPosition, normalPressure, eraserTool,
                     pen.PenButtons.Any(x => x), now, EraserDeletesSelection, PressureDragDistanceMm))
                     pendingPenAction = PenGestureAction.DeleteSelection;
@@ -274,7 +293,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                     normalPressure, !validPressure || pen.PenButtons.Any(x => x), now,
                     RightFlickUndo, LeftFlickAI, FlickPressurePercent / 100,
                     FlickDistanceMm, FlickSpeed, FlickTiltPercent / 100);
-                if (flick.CaptureSelection) flickSelection = AIPasteSelection ? Clicker.CaptureSelection() : null;
+                if (flick.JustArmed) Log.Write("PTH Gestures", "Pressure flick armed.", LogLevel.Debug);
                 if (!tipWasDown) flickTipSuppressed = false;
                 if (flick.Action != PenGestureAction.None)
                 {
@@ -377,7 +396,6 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 if (!farHover)
                     lastPenPosition = position;
                 if (!tipWasDown) { pressurePasteAnchor = null; flickAnchor = null; }
-                if (!pressureFlick.Armed) flickSelection = null;
                 // The optional Pen Scroll binding runs after transformation.
                 // Its freeze starts/ends on the following packet, so reanchor
                 // that next packet rather than the button-transition packet.
@@ -395,8 +413,17 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     {
         eraserSelection.Reset(); pressureFlick.Reset();
         flickTipSuppressed = previousFlickSuppressed = false;
-        flickAnchor = null; flickSelection = null; pendingPenAction = default;
+        flickAnchor = null; pendingPenAction = default;
         if (cancelActions) Clicker.CancelPenActions();
+    }
+
+    private void EndContactDiagnostic()
+    {
+        if (contactPeak <= 0) return;
+        float tiltTravel = contactTiltMin is Vector2 min && contactTiltMax is Vector2 max
+            ? Vector2.Distance(min, max) / 64 * 100 : 0;
+        Log.Write("PTH Gestures", $"Contact ended: eraser={eraserTool}, peak={contactPeak * 100:F0}%, tilt span={tiltTravel:F0}%.", LogLevel.Debug);
+        contactPeak = 0; contactTiltMin = contactTiltMax = null;
     }
 
     private void EndDictationHold()
@@ -413,11 +440,12 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         {
             if (disposed) return;
             base.OnOutput(report); // Binding releases and mouse-up are flushed first.
-            if (report is ITabletReport { Pressure: 0 } && pendingPenAction != PenGestureAction.None)
+            if ((report is ITabletReport { Pressure: 0 } || report is OutOfRangeReport) && pendingPenAction != PenGestureAction.None)
             {
                 var action = pendingPenAction; pendingPenAction = default;
-                Clicker.PenAction(action, AITarget, flickSelection, AIPasteSelection);
-                flickSelection = null;
+                Log.Write("PTH Gestures", $"Recognized {action}; dispatching after mouse-up.", LogLevel.Debug);
+                if (!Clicker.PenAction(action, AITarget))
+                    Log.Write("PTH Gestures", $"{action} could not be queued.", LogLevel.Warning);
             }
             if (dictationHolding && (!upperPenButton || !PressureDictationEnabled)) EndDictationHold();
             if (report is ITabletReport { Pressure: 0 } && pendingDictation)

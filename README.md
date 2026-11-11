@@ -207,7 +207,8 @@ integration and the SwiftUI companion require a Windows implementation.
 
 - **Eraser drag:** select text with the pen's eraser end, then lift. After
   mouse-up, Backspace is sent only if Accessibility exposes a non-empty selected
-  text string in the same focused app. Unsupported selections, taps and window
+  text range or string in the same focused app. A timely proximity-loss report
+  can also finish an eraser drag when no final zero-pressure packet arrives. Unsupported selections, taps and window
   dragging are skipped. Eraser tool identity is remembered across the separate
   Wacom tool and pressure reports; eraser contact cannot arm tip clipboard actions.
 - **Right flick:** strong pressure held for 40 ms arms a 650 ms window. Move
@@ -222,26 +223,21 @@ integration and the SwiftUI companion require a Windows implementation.
   (`com.openai.chat`), Claude, ChatGPT in browser and Claude in browser. The
   corresponding desktop app must already be installed. No app is installed by
   the gesture.
-- **Transfer selected text:** an additional opt-in switch takes one
-  Accessibility `AXSelectedText` snapshot when strong pressure arms the gesture.
-  Only a successful left flick writes that snapshot to the clipboard. The target
-  is opened, then a bounded background check waits for a focused editable text
-  area with a recognizable composer label in the target app. Browser transfer
-  also verifies the ancestor web area's HTTPS host. If those checks pass and the
-  clipboard has not changed, Command+V is sent once. It never presses Return or
-  sends the prompt. If the app does not expose selection or its composer, or the
-  composer lacks focus, launch still works and available selected text remains
-  on the clipboard for manual paste. Touching down can clear an earlier app
-  selection; squeezing at the end of a selection is more reliable. Password
-  fields, arbitrary launch commands/URLs and clipboard-content reads are excluded.
+AI opening does not read or transfer selected text, inspect the AI composer,
+or change the clipboard. Undo and AI opening obtain the foreground app through
+NSWorkspace; they do not depend on Accessibility text-field focus. Only eraser
+deletion requires Accessibility selection support. It tries the foreground
+application's focused element, then system focus, with a bounded messaging
+timeout. Unsupported or empty selections are skipped.
 
 Recognized flicks release the pen tip before dispatching the action, suppress
 additional tip events until physical release, and cancel competing copy/paste.
 Side buttons, tool changes, stale reports and unloading cancel recognition.
 Already recognized commands can finish after the pen leaves proximity; unloading
-cancels pending native work. Focus is checked again before delayed destructive
-shortcuts. Automatic transfer is best-effort and needs an app-specific hardware
-trial. No selection text is logged.
+cancels pending native work. The foreground app is checked again before delayed
+shortcuts. Debug diagnostics record recognition, skipped-action reasons and
+contact pressure/tilt summaries, without selection text or clipboard content.
+Hardware behavior and eraser selection support need an app-specific trial.
 
 ### Touch recovery
 

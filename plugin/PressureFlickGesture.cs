@@ -3,7 +3,7 @@ using System.Numerics;
 namespace PthTouch;
 
 public enum PenGestureAction { None, DeleteSelection, Undo, OpenAI }
-public readonly record struct FlickUpdate(PenGestureAction Action = PenGestureAction.None, bool CaptureSelection = false);
+public readonly record struct FlickUpdate(PenGestureAction Action = PenGestureAction.None, bool JustArmed = false);
 
 public sealed class PressureFlickGesture
 {
@@ -34,7 +34,7 @@ public sealed class PressureFlickGesture
             if (now - highSince < .04) return default;
             armed = true; armedAt = now; origin = previousPosition = mm; originTilt = angle;
             motionSince = null;
-            return new(CaptureSelection: aiEnabled);
+            return new(JustArmed: true);
         }
         if (now - armedAt > .65)
         { Reset(); blocked = pressure > .1f; return default; }
