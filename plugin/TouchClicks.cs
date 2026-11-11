@@ -14,6 +14,8 @@ public readonly record struct SwipeShortcut(ushort Key, ulong Flags)
 
 public interface ITouchClicker
 {
+    bool DictationShortcut(bool macParakeet) => false;
+    bool ClipboardShortcut(PressureClipboardAction action) => false;
     void Click(TapButton button, double now);
     double DoubleClickInterval => 0.5;
     void BeginDrag(double now);
@@ -78,6 +80,59 @@ public sealed class MacTouchClicker : ITouchClicker
     [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern double SendDouble(IntPtr receiver, IntPtr selector);
     [DllImport(ObjC)] private static extern IntPtr objc_autoreleasePoolPush();
     [DllImport(ObjC)] private static extern void objc_autoreleasePoolPop(IntPtr pool);
+
+    public bool DictationShortcut(bool macParakeet)
+    {
+        if (!OperatingSystem.IsMacOS()) return false;
+        ushort key = macParakeet ? (ushort)63 : (ushort)2; // Fn / D
+        IntPtr down = CGEventCreateKeyboardEvent(IntPtr.Zero, key, true);
+        IntPtr up = CGEventCreateKeyboardEvent(IntPtr.Zero, key, false);
+        try
+        {
+            if (down == IntPtr.Zero || up == IntPtr.Zero) return false;
+            if (macParakeet)
+            {
+                // MacParakeet's configured Fn-only shortcut observes changes
+                // of the Fn modifier. Always send its matching release too.
+                CGEventSetType(down, 12); CGEventSetType(up, 12);
+                CGEventSetFlags(down, 1UL << 23); CGEventSetFlags(up, 0);
+            }
+            else
+            {
+                CGEventSetFlags(down, 1UL << 23); CGEventSetFlags(up, 1UL << 23); // macOS Fn+D
+            }
+            CGEventPost(0, down); CGEventPost(0, up);
+            return true;
+        }
+        finally
+        {
+            if (down != IntPtr.Zero) CFRelease(down);
+            if (up != IntPtr.Zero) CFRelease(up);
+        }
+    }
+
+    public bool ClipboardShortcut(PressureClipboardAction action)
+    {
+        if (!OperatingSystem.IsMacOS() || action == PressureClipboardAction.None) return false;
+        ushort key = action == PressureClipboardAction.Copy ? (ushort)8 : (ushort)9; // C / V
+        IntPtr down = CGEventCreateKeyboardEvent(IntPtr.Zero, key, true);
+        IntPtr up = CGEventCreateKeyboardEvent(IntPtr.Zero, key, false);
+        try
+        {
+            if (down == IntPtr.Zero || up == IntPtr.Zero) return false;
+            foreach (var ev in new[] { down, up })
+            {
+                CGEventSetFlags(ev, 1UL << 20); // Command only
+                CGEventPost(0, ev);
+            }
+            return true;
+        }
+        finally
+        {
+            if (down != IntPtr.Zero) CFRelease(down);
+            if (up != IntPtr.Zero) CFRelease(up);
+        }
+    }
 
     public void Click(TapButton button, double now)
     {

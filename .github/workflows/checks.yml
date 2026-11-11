@@ -17,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: swiftc -framework AppKit checks/MagnifyEventCheck.swift -o /tmp/pth-magnify-check
       - run: /tmp/pth-magnify-check
+      - run: swiftc -framework AppKit checks/ShortcutEventCheck.swift -o /tmp/pth-shortcut-check
+      - run: /tmp/pth-shortcut-check
       - run: swiftc -parse-as-library -swift-version 5 settings/DaemonRPC.swift settings/SettingsCore.swift checks/SettingsCheck.swift -o /tmp/pth-settings-check
       - run: /tmp/pth-settings-check
       - run: python3 settings/build.py --output "$RUNNER_TEMP/PthTouch Settings.app"

@@ -164,6 +164,39 @@ touch dragging and scrolling keep fixed sensitivity. General jitter filtering
 is a separate option and can still apply during these actions. Turning both
 velocity switches off restores the original fixed-sensitivity behaviour.
 
+## Experimental pen-pressure gestures
+
+The **Pen → Pressure gestures** section has independent switches; all default
+to off. These features use ordinary macOS shortcuts through the host's existing
+permission, without reading clipboard contents or the app's actual selection.
+
+- **Copy at selection end:** drag with the tip, squeeze harder at the end, then
+  lift. A selection-like drag must travel at least 1.5 mm (adjustable 0.5–10 mm).
+  The recognizer learns normal contact pressure and requires a sustained rise.
+  Extra pressure defaults to 18 percentage points of the sensor range
+  (adjustable 5–50), adapting to remaining sensor headroom; a peak must reach
+  at least 35% total pressure. Command+C is sent after tip/mouse-up is flushed.
+  Continuing to drag more than 0.8 mm after the peak cancels that request.
+- **Stationary double-pressure paste:** lightly touch down, squeeze twice,
+  relaxing between peaks without lifting, then lift. Peaks must fit within the
+  system double-click interval and stay within 0.8 mm. A single long hold,
+  separate tip taps and dragging do not trigger Paste. Command+V follows
+  tip/mouse-up. An existing app selection can be replaced, as with normal Paste;
+  the condition is the stationary gesture, not semantic selection detection.
+- **Upper button + strong pressure:** hold the middle/scroll pen button and
+  press firmly to send one dictation shortcut. Release the button before
+  repeating. Threshold defaults to 60% (adjustable 20–95%). A strong-pressure
+  gesture pauses scrolling and freezes the cursor; ordinary light-pressure
+  scrolling remains available. Choose **MacParakeet (Fn shortcut)** or
+  **macOS (Fn+D)**. Configure that shortcut in the selected app beforehand;
+  MacParakeet must be running. Fn events include a matching release.
+
+Pressure peaks are debounced for 40 ms; clipboard gestures learn a normal
+contact baseline for 80 ms. Side buttons, eraser use, proximity loss, stale
+input, unloading and disabling cancel pending clipboard gestures. These are
+pen gestures, separate from native Apple Force Click. Actual pressure sensitivity
+and application shortcut behaviour require a hardware trial.
+
 ## Build and checks
 
 Requires the .NET 10 SDK:

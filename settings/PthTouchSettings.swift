@@ -123,6 +123,20 @@ struct SettingsView: View {
                         number("Y sensitivity", value: $model.values.ySensitivity, unit: "px/mm")
                         number("Reset after a pause", value: $model.values.resetMs, unit: "ms")
                     }
+                    Section("Pressure gestures (experimental)") {
+                        Toggle("Pressure peak at selection end = copy", isOn: $model.values.pressureCopy)
+                        Toggle("Two stationary pressure peaks = paste", isOn: $model.values.pressurePaste)
+                        number("Extra pressure above normal", value: $model.values.pressureRise, unit: "%")
+                        number("Selection drag threshold", value: $model.values.pressureDrag, unit: "mm")
+                        Toggle("Upper button + strong pressure = dictation", isOn: $model.values.pressureDictation)
+                        Picker("Dictation target", selection: $model.values.dictationTarget) {
+                            Text("MacParakeet (Fn shortcut)").tag("MacParakeet")
+                            Text("macOS (Fn+D)").tag("macOS")
+                        }.disabled(!model.values.pressureDictation)
+                        number("Dictation pressure threshold", value: $model.values.dictationPressure, unit: "%")
+                        Text("Drag to select, squeeze harder at the end, then lift to copy. To paste, stay in place and squeeze twice without lifting, relaxing between peaks, then lift. Commands run after mouse-up. A selection-like pen drag arms copying; stationary double pressure arms pasting. These gestures do not inspect the app's actual selection. Upper-button pressure pauses pen scrolling and sends the selected dictation shortcut once; release the button before repeating. MacParakeet must be running with its Fn shortcut configured.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
                     Section("Velocity-based sensitivity (optional)") {
                         Toggle("Enable for pen hover", isOn: $model.values.penAcceleration)
                         Toggle("Enable for one-finger touch", isOn: $model.values.touchAcceleration)
