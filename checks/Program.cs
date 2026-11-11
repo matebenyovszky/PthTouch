@@ -735,8 +735,8 @@ PressureAt(7, 0, .2f); PressureAt(7.09, 3, .2f); PressureAt(7.11, 3, .8f);
 PressureAt(7.115, 3, .2f);
 Check(PressureAt(7.17, 3, 0) == PressureClipboardAction.None,
     "An isolated pressure spike must not request Copy");
-PressureAt(8, 0, .2f); PressureAt(8.09, 3, .2f); PressureAt(8.11, 3, .3f);
-PressureAt(8.16, 3, .3f);
+PressureAt(8, 0, .2f); PressureAt(8.09, 3, .2f); PressureAt(8.11, 3, .24f);
+PressureAt(8.16, 3, .24f);
 Check(PressureAt(8.19, 3, 0) == PressureClipboardAction.None,
     "Small variations around normal selection pressure must not copy");
 PressureAt(9, 0, .6f); PressureAt(9.09, 3, .6f); PressureAt(9.11, 3, .9f);
@@ -755,6 +755,21 @@ PressureAt(13, 0, .2f); PressureAt(13.09, 3, .2f); PressureAt(13.11, 3, .8f);
 PressureAt(13.16, 3, .8f);
 Check(PressureAt(13.19, 3, 0, copy: false, paste: false) == PressureClipboardAction.None,
     "Disabling the feature must cancel an armed pressure command");
+var gradualPressure = new PressureClipboardGesture();
+for (int i = 0; i <= 60; i++)
+    gradualPressure.Update(new(i / 12f, 0), .2f + .2f * i / 60, false, i * .01, true, true);
+for (int i = 1; i <= 70; i++)
+    gradualPressure.Update(new(5, 0), .4f + .4f * i / 70, false, .6 + i * .01, true, true);
+Check(gradualPressure.Update(new(7, 0), 0, false, 1.31, true, true) == PressureClipboardAction.Copy,
+    "A gradual deliberate pressure rise at a stopped selection must not be learned away or cancelled by lift coordinates");
+var partialRelaxation = new PressureClipboardGesture();
+PressureClipboardAction Partial(double t, float p) => partialRelaxation.Update(Vector2.Zero, p, false, t, true, true);
+Partial(0, .25f); Partial(.09, .25f); Partial(.11, .5f); Partial(.16, .5f);
+Partial(.22, .8f); Partial(.27, .8f); Partial(.30, .65f); Partial(.33, .85f); Partial(.38, .85f);
+Check(partialRelaxation.LockPointer, "Recognized stationary squeezing must freeze pointer drift during the held click");
+Check(Partial(.41, 0) == PressureClipboardAction.Paste,
+    "A partial peak-relative relaxation must rearm the second squeeze without requiring a return to the original baseline");
+
 var dictationPress = new PressureDictationGesture();
 Check(!dictationPress.Update(.9f, true, false, true, 0, .6f), "Dictation pressure must survive the short debounce interval");
 Check(dictationPress.Captured, "Crossing the strong-pressure threshold must capture scrolling while the peak is verified");
@@ -782,17 +797,18 @@ void ModePressure(double time, float x, uint value, bool upper = false)
     pressureMode.Read(new PenReport(new(x, 1000), true) { Pressure = value, PenButtons = [false, upper] });
 }
 ModePressure(0, 1000, 409); ModePressure(.09, 1800, 409); ModePressure(.11, 1800, 1500);
-ModePressure(.16, 1800, 1500); ModePressure(.19, 1800, 0);
+ModePressure(.16, 1800, 1500); ModePressure(.19, 2200, 0);
 Check(pressureSink.ClipboardActions.SequenceEqual([PressureClipboardAction.Copy]),
     "The real output mode must dispatch Copy from the normalized pressure gesture");
 Check(pressureEvents.TakeLast(3).SequenceEqual(["release", "flush", "Copy"]),
     "Mouse-up handling and pointer flush must precede the Copy shortcut");
 ModePressure(1, 1800, 409); ModePressure(1.09, 1800, 409); ModePressure(1.11, 1800, 1500);
-ModePressure(1.16, 1800, 1500); ModePressure(1.19, 1800, 409); ModePressure(1.22, 1800, 1500);
-ModePressure(1.27, 1800, 1500); ModePressure(1.30, 1800, 0);
+ModePressure(1.16, 1800, 1500); ModePressure(1.19, 1800, 409); ModePressure(1.22, 1850, 1500);
+ModePressure(1.27, 1900, 1500); ModePressure(1.30, 2200, 0);
 Check(pressureSink.ClipboardActions.Last() == PressureClipboardAction.Paste &&
     pressureEvents.TakeLast(3).SequenceEqual(["release", "flush", "Paste"]),
     "The real output mode must flush mouse-up before stationary pressure paste");
+Check(pressurePointer.LastPosition == Vector2.Zero, "Stationary pressure paste must not move the cursor on squeeze or release");
 pressureMode.Dispose();
 var dictationSink = new RecordingClicker();
 var dictationPointer = new RecordingPointer();
@@ -810,10 +826,19 @@ DictationAt(2, 1000, 0, false); DictationAt(2.01, 1000, 0, true);
 DictationAt(2.02, 1000, 1600, true); DictationAt(2.07, 1100, 1600, true);
 Check(dictationSink.DictationCalls == 1 && dictationPointer.LastPosition == Vector2.Zero,
     "The dictation chord must trigger once with the cursor frozen");
-DictationAt(2.12, 1100, 1600, true); DictationAt(2.14, 1100, 0, false);
-Check(dictationSink.DictationCalls == 1 && dictationSink.Buttons.Count == 0 && dictationSink.ClipboardActions.Count == 0,
+DictationAt(2.12, 1100, 1600, true);
+Check(dictationSink.DictationEnds == 0, "The Fn modifier must stay held while the upper button remains down");
+DictationAt(2.14, 1100, 0, false);
+Check(dictationSink.DictationCalls == 1 && dictationSink.DictationEnds == 1 && dictationSink.Buttons.Count == 0 && dictationSink.ClipboardActions.Count == 0,
     "Dictation must not leak a middle click or clipboard action");
+DictationAt(2.2, 1100, 0, true); DictationAt(2.22, 1100, 1600, true); DictationAt(2.28, 1100, 1600, true);
+Check(dictationSink.DictationCalls == 2 && dictationSink.DictationEnds == 1, "A new held dictation chord must stay down until a release condition");
+dictationMode.Read(new OutOfRangeReport());
+Check(dictationSink.DictationEnds == 2, "Proximity loss must release a held Fn modifier");
+DictationAt(3, 1200, 0, false); DictationAt(3.02, 1200, 1600, true); DictationAt(3.08, 1200, 1600, true);
 dictationMode.Dispose();
+Check(dictationSink.DictationCalls == 3 && dictationSink.DictationEnds == 3,
+    "Unloading or replacing a mode must never leave the synthetic Fn modifier held");
 
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
@@ -840,8 +865,9 @@ sealed class RecordingClicker : ITouchClicker
 {
     public List<PressureClipboardAction> ClipboardActions = [];
     public Action<PressureClipboardAction> ClipboardEvent;
-    public int DictationCalls;
-    public bool DictationShortcut(bool macParakeet) { DictationCalls++; return true; }
+    public int DictationCalls, DictationEnds;
+    public bool BeginDictation(bool macParakeet) { DictationCalls++; return true; }
+    public void EndDictation() { DictationEnds++; }
     public bool ClipboardShortcut(PressureClipboardAction action) { ClipboardActions.Add(action); ClipboardEvent?.Invoke(action); return true; }
     public List<TapButton> Buttons = [];
     public int DragStarts, DragMoves, DragEnds;

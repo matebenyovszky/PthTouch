@@ -173,12 +173,12 @@ permission, without reading clipboard contents or the app's actual selection.
 - **Copy at selection end:** drag with the tip, squeeze harder at the end, then
   lift. A selection-like drag must travel at least 1.5 mm (adjustable 0.5–10 mm).
   The recognizer learns normal contact pressure and requires a sustained rise.
-  Extra pressure defaults to 18 percentage points of the sensor range
+  Extra pressure defaults to 8 percentage points of the sensor range
   (adjustable 5–50), adapting to remaining sensor headroom; a peak must reach
-  at least 35% total pressure. Command+C is sent after tip/mouse-up is flushed.
+  at least 25% total pressure. The moving-pressure reference is frozen once the drag stops, so gradual deliberate squeezes remain detectable. Command+C is sent after tip/mouse-up is flushed.
   Continuing to drag more than 0.8 mm after the peak cancels that request.
 - **Stationary double-pressure paste:** lightly touch down, squeeze twice,
-  relaxing between peaks without lifting, then lift. Peaks must fit within the
+  partially relaxing between peaks without lifting, then lift. Peaks must fit within the
   system double-click interval and stay within 0.8 mm. A single long hold,
   separate tip taps and dragging do not trigger Paste. Command+V follows
   tip/mouse-up. An existing app selection can be replaced, as with normal Paste;
@@ -189,7 +189,7 @@ permission, without reading clipboard contents or the app's actual selection.
   gesture pauses scrolling and freezes the cursor; ordinary light-pressure
   scrolling remains available. Choose **MacParakeet (Fn shortcut)** or
   **macOS (Fn+D)**. Configure that shortcut in the selected app beforehand;
-  MacParakeet must be running. Fn events include a matching release.
+  MacParakeet must be running. For MacParakeet, Fn stays held until the pen button is released. Keep the pen within sensing range; proximity loss and unloading also release Fn. macOS uses the Fn+D toggle instead.
 
 Pressure peaks are debounced for 40 ms; clipboard gestures learn a normal
 contact baseline for 80 ms. Side buttons, eraser use, proximity loss, stale

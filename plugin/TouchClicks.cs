@@ -14,7 +14,8 @@ public readonly record struct SwipeShortcut(ushort Key, ulong Flags)
 
 public interface ITouchClicker
 {
-    bool DictationShortcut(bool macParakeet) => false;
+    bool BeginDictation(bool macParakeet) => false;
+    void EndDictation() { }
     bool ClipboardShortcut(PressureClipboardAction action) => false;
     void Click(TapButton button, double now);
     double DoubleClickInterval => 0.5;
@@ -53,6 +54,7 @@ public sealed class MacTouchClicker : ITouchClicker
 {
     private readonly ClickSequence sequence = new();
     private bool dragging;
+    private bool dictationFnHeld;
     private double? doubleClickInterval;
 
     public double DoubleClickInterval => doubleClickInterval ??= ReadDoubleClickInterval();
@@ -81,26 +83,21 @@ public sealed class MacTouchClicker : ITouchClicker
     [DllImport(ObjC)] private static extern IntPtr objc_autoreleasePoolPush();
     [DllImport(ObjC)] private static extern void objc_autoreleasePoolPop(IntPtr pool);
 
-    public bool DictationShortcut(bool macParakeet)
+    public bool BeginDictation(bool macParakeet)
     {
         if (!OperatingSystem.IsMacOS()) return false;
-        ushort key = macParakeet ? (ushort)63 : (ushort)2; // Fn / D
-        IntPtr down = CGEventCreateKeyboardEvent(IntPtr.Zero, key, true);
-        IntPtr up = CGEventCreateKeyboardEvent(IntPtr.Zero, key, false);
+        if (macParakeet)
+        {
+            if (dictationFnHeld) return true;
+            dictationFnHeld = SendFn(true);
+            return dictationFnHeld;
+        }
+        IntPtr down = CGEventCreateKeyboardEvent(IntPtr.Zero, 2, true);
+        IntPtr up = CGEventCreateKeyboardEvent(IntPtr.Zero, 2, false);
         try
         {
             if (down == IntPtr.Zero || up == IntPtr.Zero) return false;
-            if (macParakeet)
-            {
-                // MacParakeet's configured Fn-only shortcut observes changes
-                // of the Fn modifier. Always send its matching release too.
-                CGEventSetType(down, 12); CGEventSetType(up, 12);
-                CGEventSetFlags(down, 1UL << 23); CGEventSetFlags(up, 0);
-            }
-            else
-            {
-                CGEventSetFlags(down, 1UL << 23); CGEventSetFlags(up, 1UL << 23); // macOS Fn+D
-            }
+            CGEventSetFlags(down, 1UL << 23); CGEventSetFlags(up, 1UL << 23); // macOS Fn+D toggle
             CGEventPost(0, down); CGEventPost(0, up);
             return true;
         }
@@ -109,6 +106,27 @@ public sealed class MacTouchClicker : ITouchClicker
             if (down != IntPtr.Zero) CFRelease(down);
             if (up != IntPtr.Zero) CFRelease(up);
         }
+    }
+
+    public void EndDictation()
+    {
+        if (!dictationFnHeld) return;
+        SendFn(false);
+        dictationFnHeld = false;
+    }
+
+    private static bool SendFn(bool down)
+    {
+        IntPtr ev = CGEventCreateKeyboardEvent(IntPtr.Zero, 63, down);
+        if (ev == IntPtr.Zero) return false;
+        try
+        {
+            CGEventSetType(ev, 12); // flagsChanged
+            CGEventSetFlags(ev, down ? 1UL << 23 : 0);
+            CGEventPost(0, ev);
+            return true;
+        }
+        finally { CFRelease(ev); }
     }
 
     public bool ClipboardShortcut(PressureClipboardAction action)

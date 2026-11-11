@@ -41,8 +41,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private readonly PressureClipboardGesture pressureClipboard = new();
     private PressureClipboardAction pendingClipboard;
     private readonly PressureDictationGesture pressureDictation = new();
-    private bool pendingDictation, previousDictationContact;
-    private Vector2? dictationAnchor;
+    private bool pendingDictation, previousDictationContact, dictationHolding, dictationTipSuppressed;
+    private Vector2? dictationAnchor, pressurePasteAnchor;
 
     // Public for deterministic output tests; the host uses the native default.
     public ITouchClicker Clicker { get; set; } = new MacTouchClicker();
@@ -66,8 +66,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     [Property("Dictation pressure threshold"), DefaultPropertyValue(60f), Unit("%")]
     public float PressureDictationPercent { get; set; } = 60;
 
-    [Property("Additional pressure above normal"), DefaultPropertyValue(18f), Unit("%")]
-    public float PressureRisePercent { get; set; } = 18;
+    [Property("Additional pressure above normal"), DefaultPropertyValue(8f), Unit("%")]
+    public float PressureRisePercent { get; set; } = 8;
 
     [Property("Selection-like drag distance"), DefaultPropertyValue(1.5f), Unit("mm")]
     public float PressureDragDistanceMm { get; set; } = 1.5f;
@@ -182,7 +182,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 StopJoystick();
                 penAcceleration.Reset();
                 pressureClipboard.Reset(); pendingClipboard = default;
-                pressureDictation.Reset(); pendingDictation = previousDictationContact = false; dictationAnchor = null;
+                pressureDictation.Reset(); pendingDictation = previousDictationContact = dictationTipSuppressed = false; dictationAnchor = pressurePasteAnchor = null;
+                EndDictationHold();
             }
             else if (deviceReport is ITabletReport pen)
             {
@@ -194,12 +195,14 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                     touch.Reset();
                 }
                 penUntil = now + 0.15;
+                bool tipWasDown = pen.Pressure > 0;
                 bool upper = pen.PenButtons.Length > 1 && pen.PenButtons[1];
                 bool upperChanged = upper != upperPenButton;
                 bool hasScrollFilter = Elements.Any(element => element.GetType().FullName == "ScrollBinding.ScrollBindingFilter");
                 bool scrollButtonChanged = upperChanged && (hasScrollFilter || PenJoystickScrolling);
                 if (upperChanged) scrollDeadband.Reset();
                 upperPenButton = upper;
+                if (!upper || !PressureDictationEnabled) pendingDictation = false;
                 bool farHover = LimitUnstableHover && deviceReport is IProximityReport { NearProximity: false } &&
                     pen.Pressure == 0 && !pen.PenButtons.Any(x => x);
                 if (farHover || reanchorPen || scrollButtonChanged)
@@ -221,14 +224,18 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 float maximumPressure = Tablet?.Properties.Specifications.Pen.MaxPressure ?? 2047;
                 bool validPressure = deviceReport is not IProximityReport { NearProximity: false } &&
                     deviceReport is not IEraserReport { Eraser: true };
+                if (!validPressure) { pendingDictation = false; EndDictationHold(); }
                 bool other = pen.PenButtons.Length > 0 && pen.PenButtons[0];
                 float normalPressure = maximumPressure > 0 ? pen.Pressure / maximumPressure : 0;
                 if (pressureDictation.Update(normalPressure, upper, other,
                     PressureDictationEnabled && validPressure, now, PressureDictationPercent / 100))
                     pendingDictation = true;
                 bool dictationContact = PressureDictationEnabled && validPressure && upper && !other && pressureDictation.Captured;
-                bool dictationChanged = dictationContact != previousDictationContact;
-                previousDictationContact = dictationContact;
+                if (pen.Pressure == 0) dictationTipSuppressed = false;
+                if (dictationContact && pen.Pressure > 0) dictationTipSuppressed = true;
+                bool freezeDictation = dictationContact || dictationTipSuppressed;
+                bool dictationChanged = freezeDictation != previousDictationContact;
+                previousDictationContact = freezeDictation;
                 var clipboardAction = pressureClipboard.Update(pen.Position * mmPerUnit,
                     maximumPressure > 0 ? pen.Pressure / maximumPressure : 0,
                     pen.PenButtons.Any(x => x) || deviceReport is IEraserReport { Eraser: true } ||
@@ -236,11 +243,18 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                     PressureCopySelection, PressureDoublePaste, PressureRisePercent / 100,
                     PressureDragDistanceMm, Clicker.DoubleClickInterval);
                 if (clipboardAction != PressureClipboardAction.None) pendingClipboard = clipboardAction;
+                if (pressureClipboard.LockPointer || (pressurePasteAnchor is not null && !tipWasDown))
+                {
+                    pressurePasteAnchor ??= lastPenPosition ?? pen.Position;
+                    pen.Position = pressurePasteAnchor.Value;
+                }
+                else pressurePasteAnchor = null;
+                if (clipboardAction != PressureClipboardAction.None) pen.Position = lastPenPosition ?? pen.Position;
                 Vector2 position = pen.Position;
                 if (farHover)
                     pen.Position = lastPenPosition ?? position;
 
-                if (dictationContact)
+                if (freezeDictation)
                 {
                     dictationAnchor ??= lastPenPosition ?? position;
                     StopJoystick();
@@ -277,7 +291,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                     if (pen.PenButtons.Length > 1) pen.PenButtons[1] = false;
                 }
 
-                if (!dictationContact) dictationAnchor = null;
+                if (!freezeDictation) dictationAnchor = null;
 
                 // Keep pressure/button releases flowing even when coordinates
                 // are unreliable. Only the cursor displacement is suppressed.
@@ -295,6 +309,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                     Clicker.Click(TapButton.Middle, now);
                 if (!farHover)
                     lastPenPosition = position;
+                if (!tipWasDown) pressurePasteAnchor = null;
                 // The optional Pen Scroll binding runs after transformation.
                 // Its freeze starts/ends on the following packet, so reanchor
                 // that next packet rather than the button-transition packet.
@@ -308,17 +323,29 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         }
     }
 
+    private void EndDictationHold()
+    {
+        if (!dictationHolding) return;
+        Clicker.EndDictation();
+        dictationHolding = false;
+        Log.Write("PTH Pressure", "Dictation Fn hold released.", LogLevel.Debug);
+    }
+
     protected override void OnOutput(IDeviceReport report)
     {
         lock (sync)
         {
             if (disposed) return;
             base.OnOutput(report); // Binding releases and mouse-up are flushed first.
+            if (dictationHolding && (!upperPenButton || !PressureDictationEnabled)) EndDictationHold();
             if (report is ITabletReport { Pressure: 0 } && pendingDictation)
             {
                 pendingDictation = false;
-                if (Clicker.DictationShortcut(PressureDictationTarget == "MacParakeet"))
-                    Log.Write("PTH Pressure", $"Dictation shortcut sent: {PressureDictationTarget}.", LogLevel.Debug);
+                if (Clicker.BeginDictation(PressureDictationTarget == "MacParakeet"))
+                {
+                    dictationHolding = PressureDictationTarget == "MacParakeet";
+                    Log.Write("PTH Pressure", $"Dictation started: {PressureDictationTarget}.", LogLevel.Debug);
+                }
             }
             if (report is ITabletReport { Pressure: 0 } && pendingClipboard != PressureClipboardAction.None)
             {
@@ -490,7 +517,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         {
             disposed = true;
             pressureClipboard.Reset(); pendingClipboard = default;
-            pressureDictation.Reset(); pendingDictation = previousDictationContact = false; dictationAnchor = null;
+            pressureDictation.Reset(); pendingDictation = previousDictationContact = dictationTipSuppressed = false; dictationAnchor = null;
+            EndDictationHold();
             joystick.Reset();
             joystickTimer?.Dispose();
             joystickTimer = null;

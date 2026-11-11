@@ -130,11 +130,11 @@ struct SettingsView: View {
                         number("Selection drag threshold", value: $model.values.pressureDrag, unit: "mm")
                         Toggle("Upper button + strong pressure = dictation", isOn: $model.values.pressureDictation)
                         Picker("Dictation target", selection: $model.values.dictationTarget) {
-                            Text("MacParakeet (Fn shortcut)").tag("MacParakeet")
+                            Text("MacParakeet (hold Fn)").tag("MacParakeet")
                             Text("macOS (Fn+D)").tag("macOS")
                         }.disabled(!model.values.pressureDictation)
                         number("Dictation pressure threshold", value: $model.values.dictationPressure, unit: "%")
-                        Text("Drag to select, squeeze harder at the end, then lift to copy. To paste, stay in place and squeeze twice without lifting, relaxing between peaks, then lift. Commands run after mouse-up. A selection-like pen drag arms copying; stationary double pressure arms pasting. These gestures do not inspect the app's actual selection. Upper-button pressure pauses pen scrolling and sends the selected dictation shortcut once; release the button before repeating. MacParakeet must be running with its Fn shortcut configured.")
+                        Text("Drag to select, squeeze harder at the end, then lift to copy. To paste, stay in place and squeeze twice without lifting, relaxing between peaks, then lift. Commands run after mouse-up. A selection-like pen drag arms copying; stationary double pressure arms pasting. These gestures do not inspect the app's actual selection. Strong upper-button pressure pauses pen scrolling. MacParakeet holds Fn until you release the pen button; macOS sends its Fn+D toggle. Stationary pressure peaks keep the cursor in place. MacParakeet must be running with its Fn shortcut configured.")
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Section("Velocity-based sensitivity (optional)") {

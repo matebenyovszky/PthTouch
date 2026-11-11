@@ -12,7 +12,7 @@ struct PthPreferences: Equatable {
     var edgeBoost = 1.0, slowGain = 0.9, fastGain = 1.35, accelerationSpeed = 150.0
     var penAcceleration = false, touchAcceleration = false, filterAllPen = false
     var pressureCopy = false, pressurePaste = false
-    var pressureRise = 18.0, pressureDrag = 1.5, dictationPressure = 60.0
+    var pressureRise = 8.0, pressureDrag = 1.5, dictationPressure = 60.0
     var pressureDictation = false, dictationTarget = "MacParakeet"
     var penScrollX = 0.5, penScrollY = 1.0, penScrollInvert = false, penScrollFreeze = true
     func applyingChanges(from baseline: PthPreferences, to edited: PthPreferences) -> PthPreferences {
