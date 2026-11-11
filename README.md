@@ -167,8 +167,9 @@ velocity switches off restores the original fixed-sensitivity behaviour.
 ## Experimental pen-pressure gestures
 
 The **Pen → Pressure gestures** section has independent switches; all default
-to off. These features use ordinary macOS shortcuts through the host's existing
-permission, without reading clipboard contents or the app's actual selection.
+to off. The copy, double-pressure paste and dictation features below use ordinary
+macOS shortcuts through the host's existing permission, without reading clipboard
+contents or the app's actual selection.
 
 - **Copy at selection end:** drag with the tip, squeeze harder at the end, then
   lift. A selection-like drag must travel at least 1.5 mm (adjustable 0.5–10 mm).
@@ -196,6 +197,60 @@ contact baseline for 80 ms. Side buttons, eraser use, proximity loss, stale
 input, unloading and disabling cancel pending clipboard gestures. These are
 pen gestures, separate from native Apple Force Click. Actual pressure sensitivity
 and application shortcut behaviour require a hardware trial.
+
+## Experimental eraser and pressure-flick gestures
+
+The companion app's **Pen → Eraser and flick gestures** section exposes separate
+switches, all off by default. This release remains macOS-only; the pure gesture
+recognizers are portable C#, but native output, app launching, Accessibility
+integration and the SwiftUI companion require a Windows implementation.
+
+- **Eraser drag:** select text with the pen's eraser end, then lift. After
+  mouse-up, Backspace is sent only if Accessibility exposes a non-empty selected
+  text string in the same focused app. Unsupported selections, taps and window
+  dragging are skipped. Eraser tool identity is remembered across the separate
+  Wacom tool and pressure reports; eraser contact cannot arm tip clipboard actions.
+- **Right flick:** strong pressure held for 40 ms arms a 650 ms window. Move
+  quickly right while changing tilt to send Command+Z. The default requirements
+  are 65% pressure, 6 mm horizontal travel, 100 mm/s average motion speed and a
+  tilt-vector change of 12% of the raw sensor range. Travel must dominate vertical
+  movement and finish within 180 ms of starting. Each threshold is adjustable;
+  tilt units are sensor fractions, not degrees. Directions refer to the physical
+  tablet. Devices without tilt reports cannot trigger the action.
+- **Left flick:** opens the selected desktop app or HTTPS page in the default
+  browser. Presets are ChatGPT/Codex (`com.openai.codex`), ChatGPT
+  (`com.openai.chat`), Claude, ChatGPT in browser and Claude in browser. The
+  corresponding desktop app must already be installed. No app is installed by
+  the gesture.
+- **Transfer selected text:** an additional opt-in switch takes one
+  Accessibility `AXSelectedText` snapshot when strong pressure arms the gesture.
+  Only a successful left flick writes that snapshot to the clipboard. The target
+  is opened, then a bounded background check waits for a focused editable text
+  area with a recognizable composer label in the target app. Browser transfer
+  also verifies the ancestor web area's HTTPS host. If those checks pass and the
+  clipboard has not changed, Command+V is sent once. It never presses Return or
+  sends the prompt. If the app does not expose selection or its composer, or the
+  composer lacks focus, launch still works and available selected text remains
+  on the clipboard for manual paste. Touching down can clear an earlier app
+  selection; squeezing at the end of a selection is more reliable. Password
+  fields, arbitrary launch commands/URLs and clipboard-content reads are excluded.
+
+Recognized flicks release the pen tip before dispatching the action, suppress
+additional tip events until physical release, and cancel competing copy/paste.
+Side buttons, tool changes, stale reports and unloading cancel recognition.
+Already recognized commands can finish after the pen leaves proximity; unloading
+cancels pending native work. Focus is checked again before delayed destructive
+shortcuts. Automatic transfer is best-effort and needs an app-specific hardware
+trial. No selection text is logged.
+
+### Touch recovery
+
+The pen and touch use separate USB interfaces. If pen input works but no touch
+reports arrive even with the pen far away and the physical touch switch on,
+unplugging and reconnecting the tablet can restore the touch interface. This
+was observed on the PTH-851; the underlying intermittent USB/firmware cause is
+not established. The plugin cannot synthesize missing touch reports, and does
+not repeatedly reset USB devices or weaken pen palm rejection to hide the issue.
 
 ## Build and checks
 

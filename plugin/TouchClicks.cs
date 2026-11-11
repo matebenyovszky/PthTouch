@@ -14,6 +14,9 @@ public readonly record struct SwipeShortcut(ushort Key, ulong Flags)
 
 public interface ITouchClicker
 {
+    string? CaptureSelection() => null;
+    bool PenAction(PenGestureAction action, string target, string? selection, bool paste) => false;
+    void CancelPenActions() { }
     bool BeginDictation(bool macParakeet) => false;
     void EndDictation() { }
     bool ClipboardShortcut(PressureClipboardAction action) => false;
@@ -52,6 +55,11 @@ public sealed class ClickSequence
 // are an actual macOS double click. All events use the existing host's access.
 public sealed class MacTouchClicker : ITouchClicker
 {
+    private readonly MacPenActions penActions = new();
+    public string? CaptureSelection() => penActions.CaptureSelection();
+    public bool PenAction(PenGestureAction action, string target, string? selection, bool paste) =>
+        penActions.Perform(action, target, selection, paste);
+    public void CancelPenActions() => penActions.Cancel();
     private readonly ClickSequence sequence = new();
     private bool dragging;
     private bool dictationFnHeld;

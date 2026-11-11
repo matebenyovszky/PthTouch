@@ -137,6 +137,23 @@ struct SettingsView: View {
                         Text("Drag to select, squeeze harder at the end, then lift to copy. To paste, stay in place and squeeze twice without lifting, relaxing between peaks, then lift. Commands run after mouse-up. A selection-like pen drag arms copying; stationary double pressure arms pasting. These gestures do not inspect the app's actual selection. Strong upper-button pressure pauses pen scrolling. MacParakeet holds Fn until you release the pen button; macOS sends its Fn+D toggle. Stationary pressure peaks keep the cursor in place. MacParakeet must be running with its Fn shortcut configured.")
                             .font(.caption).foregroundColor(.secondary)
                     }
+                    Section("Eraser and flick gestures (experimental)") {
+                        Toggle("Eraser drag deletes selected text", isOn: $model.values.eraserDelete)
+                        Text("Select text with the eraser end and lift. Deletes only when the app exposes a non-empty text selection through Accessibility; unsupported apps are skipped.")
+                            .font(.caption).foregroundColor(.secondary)
+                        Toggle("Strong pressure + right flick = Undo", isOn: $model.values.rightFlick)
+                        Toggle("Strong pressure + left flick = open AI", isOn: $model.values.leftFlick)
+                        Picker("AI target", selection: $model.values.aiTarget) {
+                            ForEach(PthPreferences.aiTargets, id: \.self) { Text($0).tag($0) }
+                        }.disabled(!model.values.leftFlick)
+                        Toggle("Transfer selected text to AI", isOn: $model.values.aiPaste).disabled(!model.values.leftFlick)
+                        number("Flick pressure threshold", value: $model.values.flickPressure, unit: "%")
+                        number("Minimum flick travel", value: $model.values.flickDistance, unit: "mm")
+                        number("Minimum flick speed", value: $model.values.flickSpeed, unit: "mm/s")
+                        number("Minimum tilt change", value: $model.values.flickTilt, unit: "%")
+                        Text("Press firmly for a moment, then flick within 0.65 s, changing pen tilt. Directions follow the physical tablet. Right sends ⌘Z. Left opens the chosen app or browser page. Selection is captured when pressure arms the gesture; some apps do not expose it, and touching down may clear an earlier selection. Transfer updates the clipboard and pastes only into a recognized, focused AI composer, without sending. Otherwise paste manually. The chosen desktop app must be installed; browser targets use your default browser. Tilt is a fraction of the sensor range, not degrees.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
                     Section("Velocity-based sensitivity (optional)") {
                         Toggle("Enable for pen hover", isOn: $model.values.penAcceleration)
                         Toggle("Enable for one-finger touch", isOn: $model.values.touchAcceleration)

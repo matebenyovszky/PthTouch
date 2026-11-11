@@ -1,0 +1,60 @@
+using System.Numerics;
+
+namespace PthTouch;
+
+public enum PenGestureAction { None, DeleteSelection, Undo, OpenAI }
+public readonly record struct FlickUpdate(PenGestureAction Action = PenGestureAction.None, bool CaptureSelection = false);
+
+public sealed class PressureFlickGesture
+{
+    private double? highSince, motionSince;
+    private double armedAt, previousTime;
+    private Vector2 origin, originTilt, previousPosition, motionOrigin;
+    private bool armed, blocked;
+    private bool hasPrevious;
+    public bool Armed => armed;
+    public void Reset() { highSince = motionSince = null; armed = blocked = hasPrevious = false; }
+    public FlickUpdate Update(Vector2 mm, Vector2? tilt, float pressure, bool cancel, double now,
+        bool undoEnabled, bool aiEnabled, float pressureThreshold = .65f,
+        float distanceMm = 6, float speedMmPerSecond = 100, float tiltChange = .12f)
+    {
+        if ((!undoEnabled && !aiEnabled) || cancel || tilt is not Vector2 angle ||
+            !float.IsFinite(mm.X) || !float.IsFinite(mm.Y) || !float.IsFinite(angle.X) ||
+            !float.IsFinite(angle.Y) || !double.IsFinite(now) || !float.IsFinite(pressure))
+        { Reset(); return default; }
+        if (blocked) { if (pressure <= .1f) Reset(); return default; }
+        if (hasPrevious && (now < previousTime || now - previousTime > .25))
+        { Reset(); blocked = pressure > .1f; return default; }
+        previousTime = now; hasPrevious = true;
+        pressureThreshold = float.IsFinite(pressureThreshold) ? Math.Clamp(pressureThreshold, .3f, .95f) : .65f;
+        if (!armed)
+        {
+            if (pressure < pressureThreshold) { highSince = null; return default; }
+            highSince ??= now;
+            if (now - highSince < .04) return default;
+            armed = true; armedAt = now; origin = previousPosition = mm; originTilt = angle;
+            motionSince = null;
+            return new(CaptureSelection: aiEnabled);
+        }
+        if (now - armedAt > .65)
+        { Reset(); blocked = pressure > .1f; return default; }
+        if (motionSince is null && Vector2.Distance(mm, origin) > 1)
+        { motionSince = now; motionOrigin = previousPosition; }
+        previousPosition = mm;
+        if (motionSince is not double motionStart) return default;
+        if (now - motionStart > .18)
+        { Reset(); blocked = pressure > .1f; return default; }
+        Vector2 delta = mm - motionOrigin;
+        float travel = MathF.Abs(delta.X);
+        float minimum = float.IsFinite(distanceMm) ? Math.Clamp(distanceMm, 2, 30) : 6;
+        float speed = travel / MathF.Max((float)(now - motionStart), .005f);
+        float minimumSpeed = float.IsFinite(speedMmPerSecond) ? Math.Clamp(speedMmPerSecond, 30, 1000) : 100;
+        float minimumTilt = float.IsFinite(tiltChange) ? Math.Clamp(tiltChange, .02f, 1) : .12f;
+        if (travel < minimum || travel < MathF.Abs(delta.Y) * 1.5f || speed < minimumSpeed ||
+            Vector2.Distance(angle, originTilt) < minimumTilt) return default;
+        var action = delta.X > 0 ? (undoEnabled ? PenGestureAction.Undo : PenGestureAction.None)
+            : (aiEnabled ? PenGestureAction.OpenAI : PenGestureAction.None);
+        Reset(); blocked = true;
+        return new(action);
+    }
+}

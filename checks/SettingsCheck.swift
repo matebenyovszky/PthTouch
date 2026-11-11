@@ -29,6 +29,9 @@ struct SettingsChecks {
         preferences.joystick = true; preferences.joystickWidth = 25; preferences.joystickHeight = 30
         preferences.edgeBoost = 4; preferences.joystickCurve = 9
         preferences.pressureCopy = true; preferences.pressurePaste = true; preferences.pressureRise = 22; preferences.pressureDrag = 2.5
+        preferences.eraserDelete = true; preferences.rightFlick = true; preferences.leftFlick = true; preferences.aiPaste = true
+        preferences.aiTarget = "ChatGPT in browser"; preferences.flickPressure = 55; preferences.flickDistance = 8
+        preferences.flickSpeed = 200; preferences.flickTilt = 20
         preferences.pressureDictation = true; preferences.dictationTarget = "macOS"; preferences.dictationPressure = 65
         preferences.filterAllPen = true; preferences.penAcceleration = true; preferences.touchAcceleration = true
         preferences.slowGain = 0.8; preferences.fastGain = 1.6; preferences.accelerationSpeed = 200
@@ -53,6 +56,10 @@ struct SettingsChecks {
         do { _ = try document.merging(invertedGain); check(false, "Reject inverted acceleration range") } catch { check(true, "Rejected inverted acceleration range") }
         var invalidTarget = preferences; invalidTarget.dictationTarget = "unsupported"
         do { _ = try document.merging(invalidTarget); check(false, "Reject unknown dictation shortcut") } catch { check(true, "Rejected unknown dictation shortcut") }
+        var invalidAI = preferences; invalidAI.aiTarget = "file:///tmp/untrusted"
+        do { _ = try document.merging(invalidAI); check(false, "Reject arbitrary AI launch targets") } catch { check(true, "Rejected unsupported AI target") }
+        var invalidFlick = preferences; invalidFlick.flickTilt = 0
+        do { _ = try document.merging(invalidFlick); check(false, "Flick must require tilt change") } catch { check(true, "Rejected zero tilt threshold") }
         let baseline = PthPreferences(); var external = baseline, edited = baseline
         external.xSensitivity = 35; external.desktopTravel = 90; edited.pinch = true
         let combined = external.applyingChanges(from: baseline, to: edited)

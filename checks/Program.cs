@@ -840,6 +840,85 @@ dictationMode.Dispose();
 Check(dictationSink.DictationCalls == 3 && dictationSink.DictationEnds == 3,
     "Unloading or replacing a mode must never leave the synthetic Fn modifier held");
 
+// Physical-tool identity is separate from pressure reports on Intuos Pro.
+var erase = new EraserSelectionGesture();
+bool Erase(double t, float x, float p, bool eraser = true, bool buttons = false) =>
+    erase.Update(new(x, 0), p, eraser, buttons, t, true, 1.5f);
+Erase(0, 0, .2f); Erase(.03, 3, .2f);
+Check(Erase(.05, 100, 0), "Eraser selection must run only on lift, ignoring lift-coordinate drift");
+Check(!Erase(.06, 100, 0), "Eraser lift must delete only once");
+Erase(1, 0, .2f); Check(!Erase(1.05, 0, 0), "Stationary eraser taps must not delete");
+Erase(2, 0, .2f); Erase(2.04, 3, .2f); Erase(2.05, 3, .2f, buttons: true);
+Check(!Erase(2.08, 3, 0), "Side buttons must cancel eraser deletion");
+Erase(3, 0, .2f); Erase(3.04, 3, .2f);
+Check(!Erase(3.4, 3, 0), "Lost reports must not delete a stale selection");
+Erase(4, 0, .2f); Erase(4.04, 3, .2f);
+Check(!Erase(4.06, 3, 0, eraser: false), "Switching to the tip must cancel eraser deletion");
+
+var flickEngine = new PressureFlickGesture();
+FlickUpdate Flick(double t, float x, float tilt = 0, float pressure = .8f, bool cancel = false, float y = 0) =>
+    flickEngine.Update(new(x, y), new Vector2(tilt, 0), pressure, cancel, t, true, true);
+Check(Flick(0, 0) == default, "Flick arming needs sustained pressure");
+Check(Flick(.045, 0).CaptureSelection, "AI selection must be captured once at pressure arming");
+Check(!Flick(.055, 2, .1f).CaptureSelection, "Flick motion must not recapture the changing selection");
+Check(Flick(.08, 8, .2f).Action == PenGestureAction.Undo, "Fast right movement with tilt change must undo");
+Check(Flick(.09, 16, .4f).Action == PenGestureAction.None, "A held flick cannot repeat");
+Flick(.1, 16, pressure: 0); Flick(.12, 0); Flick(.17, 0); Flick(.18, -2, .1f);
+Check(Flick(.21, -8, .2f).Action == PenGestureAction.OpenAI, "The left flick must choose AI independently");
+flickEngine.Reset(); Flick(1, 0); Flick(1.05, 0); Flick(1.06, 2);
+Check(Flick(1.09, 9).Action == PenGestureAction.None, "Fast straight movement without tilt must not trigger");
+flickEngine.Reset(); Flick(2, 0); Flick(2.05, 0); Flick(2.06, 2, .2f);
+Check(Flick(2.18, 7, .2f).Action == PenGestureAction.None, "Slow pen movement must not trigger a flick");
+flickEngine.Reset(); Flick(3, 0); Flick(3.05, 0); Flick(3.06, 2, .2f, y: 2);
+Check(Flick(3.08, 8, .2f, y: 8).Action == PenGestureAction.None, "Diagonal motion must not trigger a horizontal action");
+flickEngine.Reset(); Flick(4, 0); Flick(4.05, 0);
+Check(Flick(4.4, 10, .3f).Action == PenGestureAction.None, "A report gap must cancel an armed flick");
+flickEngine.Reset(); Flick(5, 0); Flick(5.05, 0); Flick(5.06, 2, .2f, cancel: true);
+Check(Flick(5.08, 10, .3f).Action == PenGestureAction.None, "Side buttons and tool changes must cancel flicks");
+flickEngine.Reset(); Flick(6, 0); Flick(6.05, 0);
+for (int i = 1; i < 8; i++) Flick(6.05 + i * .1, 0);
+Check(Flick(6.79, 10, .3f).Action == PenGestureAction.None, "An expired arming window must not execute later");
+Check(flickEngine.Update(Vector2.Zero, null, 1, false, 8, true, true) == default,
+    "Devices without tilt reports must not guess flick gestures");
+Check(MacPenActions.ResolveTarget("ChatGPT in browser").Url == "https://chatgpt.com/" &&
+    MacPenActions.ResolveTarget("ChatGPT/Codex").Bundle == "com.openai.codex" &&
+    MacPenActions.ResolveTarget("invalid") == default, "AI targets must use a fixed app/HTTPS allowlist");
+Check(MacPenActions.ComposerLabel("Message ChatGPT") && !MacPenActions.ComposerLabel("Search") &&
+    !MacPenActions.ComposerLabel("Password"), "Only recognizable composer labels qualify for automatic paste");
+
+var extraEvents = new List<string>();
+var extraSink = new RecordingClicker { PenEvent = action => extraEvents.Add(action.ToString()) };
+var extraPointer = new RecordingPointer { AfterFlush = () => extraEvents.Add("flush") };
+double extraTime = 0;
+var extraMode = new TrackpadRelativeMode { Pointer = extraPointer, Clicker = extraSink,
+    Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100), ClockSeconds = () => extraTime,
+    EraserDeletesSelection = true, PressureCopySelection = true, PressureDoublePaste = true,
+    RightFlickUndo = true, LeftFlickAI = true, AIPasteSelection = true,
+    Elements = [new ReleaseMarker(extraEvents)] };
+void Extra(double t, float x, uint pressure, float tilt = 0) {
+    extraTime = t;
+    extraMode.Read(new PenReport(new(x, 1000), true) { Pressure = pressure, Tilt = new(tilt, 0) });
+}
+extraMode.Read(new ToolReport(true));
+Extra(0, 1000, 409); Extra(.05, 1800, 409); Extra(.1, 1800, 1600);
+Extra(.15, 1800, 1600); Extra(.18, 1800, 0);
+Check(extraSink.PenActions.SequenceEqual([PenGestureAction.DeleteSelection]) && extraSink.ClipboardActions.Count == 0,
+    "Separate eraser identity must reach ordinary pen packets and exclude tip clipboard gestures");
+Check(extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "DeleteSelection"]),
+    "Eraser deletion must follow native mouse-up and flush");
+extraMode.Read(new ToolReport(false)); Extra(1, 1000, 1600); Extra(1.05, 1000, 1600);
+Extra(1.06, 1400, 1600, 8); Extra(1.09, 2600, 1600, 16);
+Check(extraSink.PenActions.Last() == PenGestureAction.Undo &&
+    extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "Undo"]), "Flick actions must release the tip before shortcut dispatch");
+Extra(1.11, 3000, 1600, 25); Extra(1.14, 3000, 0);
+Check(extraSink.ClipboardActions.Count == 0 && extraSink.PenActions.Count == 2,
+    "A captured flick must not leak later clipboard commands or repeat");
+Extra(2, 3000, 1600); Extra(2.05, 3000, 1600); Extra(2.06, 2600, 1600, 8); Extra(2.09, 1400, 1600, 16);
+Check(extraSink.PenActions.Last() == PenGestureAction.OpenAI && extraSink.LastSelection == "test selection",
+    "The AI flick must transfer the selection captured at arming");
+extraMode.Dispose();
+Check(extraSink.PenCancels > 0, "Unloading must cancel delayed native actions");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
@@ -863,6 +942,15 @@ sealed class RecordingPointer : IRelativePointer, IMouseScrollHandler, ISynchron
 
 sealed class RecordingClicker : ITouchClicker
 {
+    public List<PenGestureAction> PenActions = [];
+    public Action<PenGestureAction> PenEvent;
+    public string LastSelection;
+    public int PenCancels;
+    public string CaptureSelection() => "test selection";
+    public bool PenAction(PenGestureAction action, string target, string selection, bool paste) {
+        PenActions.Add(action); LastSelection = selection; PenEvent?.Invoke(action); return true;
+    }
+    public void CancelPenActions() => PenCancels++;
     public List<PressureClipboardAction> ClipboardActions = [];
     public Action<PressureClipboardAction> ClipboardEvent;
     public int DictationCalls, DictationEnds;
@@ -883,13 +971,14 @@ sealed class RecordingClicker : ITouchClicker
     public void EndDrag() => DragEnds++;
 }
 
-sealed class PenReport(Vector2 position, bool near) : ITabletReport, IProximityReport
+sealed class PenReport(Vector2 position, bool near) : ITabletReport, IProximityReport, ITiltReport
 {
     public byte[] Raw { get; set; } = [];
     public Vector2 Position { get; set; } = position;
     public uint Pressure { get; set; }
     public bool[] PenButtons { get; set; } = [false, false];
     public bool NearProximity { get; set; } = near;
+    public Vector2 Tilt { get; set; }
     public uint HoverDistance { get; set; }
 }
 
@@ -902,4 +991,9 @@ sealed class ReleaseMarker(List<string> events) : OpenTabletDriver.Plugin.Output
         if (report is ITabletReport { Pressure: 0 }) events.Add("release");
         Emit?.Invoke(report);
     }
+}
+
+sealed class ToolReport(bool eraser) : IEraserReport {
+    public byte[] Raw { get; set; } = [];
+    public bool Eraser { get; set; } = eraser;
 }
