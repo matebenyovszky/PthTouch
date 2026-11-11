@@ -691,6 +691,155 @@ Check(sharedScrollSink.SeenPositions.Last().X == 1025,
     "General pen filtering and scroll-only filtering must not stack two median windows");
 sharedScrollMode.Dispose();
 
+var pressureGesture = new PressureClipboardGesture();
+PressureClipboardAction PressureAt(double t, float x, float p, bool cancel = false,
+    bool copy = true, bool paste = true) => pressureGesture.Update(new(x, 0), p, cancel, t, copy, paste);
+PressureAt(0, 0, .2f); PressureAt(.09, 3, .2f);
+Check(PressureAt(.11, 3, .8f) == PressureClipboardAction.None,
+    "A pressure peak must not send Copy before the normal drag finishes");
+PressureAt(.16, 3, .8f);
+Check(PressureAt(.19, 3, 0) == PressureClipboardAction.Copy,
+    "A selection-ending rise above normal pressure must copy on tip release");
+Check(PressureAt(.20, 3, 0) == PressureClipboardAction.None,
+    "One selection must send Copy only once");
+PressureAt(1, 0, .2f); PressureAt(1.09, 3, .2f); PressureAt(1.11, 3, .8f);
+PressureAt(1.16, 3, .8f); PressureAt(1.18, 5, .8f);
+Check(PressureAt(1.21, 5, 0) == PressureClipboardAction.None,
+    "Continuing to drag after a pressure peak must cancel that copy request");
+PressureAt(2, 0, .2f); PressureAt(2.09, 0, .2f); PressureAt(2.11, 0, .8f);
+PressureAt(2.16, 3, .8f);
+Check(PressureAt(2.19, 3, 0) == PressureClipboardAction.None,
+    "A hard landing before dragging must not act as a selection-ending peak");
+PressureAt(3, 0, .2f); PressureAt(3.09, 0, .2f); PressureAt(3.11, 0, .8f);
+PressureAt(3.16, 0, .8f); PressureAt(3.19, 0, .2f); PressureAt(3.22, 0, .8f);
+Check(PressureAt(3.27, 0, .8f) == PressureClipboardAction.None,
+    "Two stationary pressure peaks must not paste while mouse-down is still active");
+Check(PressureAt(3.30, 0, 0) == PressureClipboardAction.Paste,
+    "Two quick stationary pressure peaks in one contact must paste after mouse-up");
+PressureAt(4, 0, .2f); PressureAt(4.09, 0, .2f); PressureAt(4.11, 0, .8f);
+PressureAt(4.16, 0, .8f); PressureAt(4.19, 0, .8f); PressureAt(4.22, 0, .8f);
+Check(PressureAt(4.25, 0, 0) == PressureClipboardAction.None,
+    "A sustained strong hold must not count as two pressure peaks");
+PressureAt(5, 0, .2f); PressureAt(5.09, 0, .2f); PressureAt(5.11, 0, .8f);
+PressureAt(5.16, 0, .8f); PressureAt(5.19, 0, 0);
+PressureAt(5.25, 0, .2f); PressureAt(5.34, 0, .2f); PressureAt(5.36, 0, .8f);
+PressureAt(5.41, 0, .8f);
+Check(PressureAt(5.44, 0, 0) == PressureClipboardAction.None,
+    "Two separate tip taps must not become a pressure-paste gesture");
+PressureAt(6, 0, .2f); PressureAt(6.09, 0, .2f); PressureAt(6.11, 0, .8f);
+PressureAt(6.16, 0, .8f); PressureAt(6.19, 0, .2f); PressureAt(6.38, 0, .2f);
+PressureAt(6.57, 0, .2f); PressureAt(6.71, 0, .8f); PressureAt(6.76, 0, .8f);
+Check(PressureAt(6.79, 0, 0) == PressureClipboardAction.None,
+    "Pressure peaks outside double-click timing must not paste");
+PressureAt(7, 0, .2f); PressureAt(7.09, 3, .2f); PressureAt(7.11, 3, .8f);
+PressureAt(7.115, 3, .2f);
+Check(PressureAt(7.17, 3, 0) == PressureClipboardAction.None,
+    "An isolated pressure spike must not request Copy");
+PressureAt(8, 0, .2f); PressureAt(8.09, 3, .2f); PressureAt(8.11, 3, .24f);
+PressureAt(8.16, 3, .24f);
+Check(PressureAt(8.19, 3, 0) == PressureClipboardAction.None,
+    "Small variations around normal selection pressure must not copy");
+PressureAt(9, 0, .6f); PressureAt(9.09, 3, .6f); PressureAt(9.11, 3, .9f);
+PressureAt(9.16, 3, .9f);
+Check(PressureAt(9.19, 3, 0) == PressureClipboardAction.Copy,
+    "Peak detection must also adapt to a heavier normal selection pressure");
+PressureAt(10, 0, .2f); PressureAt(10.09, 3, .2f); PressureAt(10.11, 3, .8f);
+PressureAt(10.16, 3, .8f); PressureAt(10.18, 3, .8f, cancel: true);
+Check(PressureAt(10.21, 3, 0) == PressureClipboardAction.None,
+    "A side button, eraser or proximity cancellation must discard pending Copy");
+PressureAt(11, 0, .2f); PressureAt(11.09, 3, .2f); PressureAt(11.11, 3, .8f);
+PressureAt(11.16, 3, .8f);
+Check(PressureAt(12, 3, 0) == PressureClipboardAction.None,
+    "A lost report stream must not execute a stale copy request");
+PressureAt(13, 0, .2f); PressureAt(13.09, 3, .2f); PressureAt(13.11, 3, .8f);
+PressureAt(13.16, 3, .8f);
+Check(PressureAt(13.19, 3, 0, copy: false, paste: false) == PressureClipboardAction.None,
+    "Disabling the feature must cancel an armed pressure command");
+var gradualPressure = new PressureClipboardGesture();
+for (int i = 0; i <= 60; i++)
+    gradualPressure.Update(new(i / 12f, 0), .2f + .2f * i / 60, false, i * .01, true, true);
+for (int i = 1; i <= 70; i++)
+    gradualPressure.Update(new(5, 0), .4f + .4f * i / 70, false, .6 + i * .01, true, true);
+Check(gradualPressure.Update(new(7, 0), 0, false, 1.31, true, true) == PressureClipboardAction.Copy,
+    "A gradual deliberate pressure rise at a stopped selection must not be learned away or cancelled by lift coordinates");
+var partialRelaxation = new PressureClipboardGesture();
+PressureClipboardAction Partial(double t, float p) => partialRelaxation.Update(Vector2.Zero, p, false, t, true, true);
+Partial(0, .25f); Partial(.09, .25f); Partial(.11, .5f); Partial(.16, .5f);
+Partial(.22, .8f); Partial(.27, .8f); Partial(.30, .65f); Partial(.33, .85f); Partial(.38, .85f);
+Check(partialRelaxation.LockPointer, "Recognized stationary squeezing must freeze pointer drift during the held click");
+Check(Partial(.41, 0) == PressureClipboardAction.Paste,
+    "A partial peak-relative relaxation must rearm the second squeeze without requiring a return to the original baseline");
+
+var dictationPress = new PressureDictationGesture();
+Check(!dictationPress.Update(.9f, true, false, true, 0, .6f), "Dictation pressure must survive the short debounce interval");
+Check(dictationPress.Captured, "Crossing the strong-pressure threshold must capture scrolling while the peak is verified");
+Check(dictationPress.Update(.9f, true, false, true, .05, .6f), "Upper button plus strong pressure must trigger dictation");
+Check(!dictationPress.Update(.9f, true, false, true, .10, .6f), "Dictation must not repeat while the same button is held");
+dictationPress.Update(0, false, false, true, .12, .6f);
+Check(!dictationPress.Captured, "Releasing the upper button must restore ordinary pen scrolling");
+Check(!dictationPress.Update(.3f, true, false, true, .14, .6f), "Light pressure with the upper button must keep normal scrolling");
+Check(!dictationPress.Captured, "Ordinary light-pressure pen scrolling must remain available before a dictation gesture");
+dictationPress.Update(.9f, true, false, true, .16, .6f);
+Check(dictationPress.Update(.9f, true, false, true, .21, .6f), "Releasing the button must rearm dictation");
+Check(!dictationPress.Update(.9f, true, true, true, .26, .6f), "The other side button must cancel dictation");
+
+var pressureEvents = new List<string>();
+var pressurePointer = new RecordingPointer { AfterFlush = () => pressureEvents.Add("flush") };
+var pressureSink = new RecordingClicker { ClipboardEvent = action => pressureEvents.Add(action.ToString()) };
+double pressureTime = 0;
+var pressureMode = new TrackpadRelativeMode { Pointer = pressurePointer, Clicker = pressureSink,
+    Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100),
+    PressureCopySelection = true, PressureDoublePaste = true, ClockSeconds = () => pressureTime,
+    Elements = [new ReleaseMarker(pressureEvents)] };
+void ModePressure(double time, float x, uint value, bool upper = false)
+{
+    pressureTime = time;
+    pressureMode.Read(new PenReport(new(x, 1000), true) { Pressure = value, PenButtons = [false, upper] });
+}
+ModePressure(0, 1000, 409); ModePressure(.09, 1800, 409); ModePressure(.11, 1800, 1500);
+ModePressure(.16, 1800, 1500); ModePressure(.19, 2200, 0);
+Check(pressureSink.ClipboardActions.SequenceEqual([PressureClipboardAction.Copy]),
+    "The real output mode must dispatch Copy from the normalized pressure gesture");
+Check(pressureEvents.TakeLast(3).SequenceEqual(["release", "flush", "Copy"]),
+    "Mouse-up handling and pointer flush must precede the Copy shortcut");
+ModePressure(1, 1800, 409); ModePressure(1.09, 1800, 409); ModePressure(1.11, 1800, 1500);
+ModePressure(1.16, 1800, 1500); ModePressure(1.19, 1800, 409); ModePressure(1.22, 1850, 1500);
+ModePressure(1.27, 1900, 1500); ModePressure(1.30, 2200, 0);
+Check(pressureSink.ClipboardActions.Last() == PressureClipboardAction.Paste &&
+    pressureEvents.TakeLast(3).SequenceEqual(["release", "flush", "Paste"]),
+    "The real output mode must flush mouse-up before stationary pressure paste");
+Check(pressurePointer.LastPosition == Vector2.Zero, "Stationary pressure paste must not move the cursor on squeeze or release");
+pressureMode.Dispose();
+var dictationSink = new RecordingClicker();
+var dictationPointer = new RecordingPointer();
+var dictationMode = new TrackpadRelativeMode { Pointer = dictationPointer, Clicker = dictationSink,
+    Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100),
+    PressureCopySelection = true, PressureDoublePaste = true, PressureDictationEnabled = true,
+    UpperButtonTapMiddleClick = true, PenJoystickScrolling = true, EnableJoystickTimer = false,
+    ClockSeconds = () => pressureTime };
+void DictationAt(double time, float x, uint value, bool upper)
+{
+    pressureTime = time;
+    dictationMode.Read(new PenReport(new(x, 1000), true) { Pressure = value, PenButtons = [false, upper] });
+}
+DictationAt(2, 1000, 0, false); DictationAt(2.01, 1000, 0, true);
+DictationAt(2.02, 1000, 1600, true); DictationAt(2.07, 1100, 1600, true);
+Check(dictationSink.DictationCalls == 1 && dictationPointer.LastPosition == Vector2.Zero,
+    "The dictation chord must trigger once with the cursor frozen");
+DictationAt(2.12, 1100, 1600, true);
+Check(dictationSink.DictationEnds == 0, "The Fn modifier must stay held while the upper button remains down");
+DictationAt(2.14, 1100, 0, false);
+Check(dictationSink.DictationCalls == 1 && dictationSink.DictationEnds == 1 && dictationSink.Buttons.Count == 0 && dictationSink.ClipboardActions.Count == 0,
+    "Dictation must not leak a middle click or clipboard action");
+DictationAt(2.2, 1100, 0, true); DictationAt(2.22, 1100, 1600, true); DictationAt(2.28, 1100, 1600, true);
+Check(dictationSink.DictationCalls == 2 && dictationSink.DictationEnds == 1, "A new held dictation chord must stay down until a release condition");
+dictationMode.Read(new OutOfRangeReport());
+Check(dictationSink.DictationEnds == 2, "Proximity loss must release a held Fn modifier");
+DictationAt(3, 1200, 0, false); DictationAt(3.02, 1200, 1600, true); DictationAt(3.08, 1200, 1600, true);
+dictationMode.Dispose();
+Check(dictationSink.DictationCalls == 3 && dictationSink.DictationEnds == 3,
+    "Unloading or replacing a mode must never leave the synthetic Fn modifier held");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
@@ -707,12 +856,19 @@ sealed class RecordingPointer : IRelativePointer, IMouseScrollHandler, ISynchron
     public void SetPosition(Vector2 delta) { Moves++; LastPosition = delta; }
     public void ScrollVertically(int amount) => Scrolls++;
     public void ScrollHorizontally(int amount) => Scrolls++;
-    public void Flush() { }
+    public Action AfterFlush;
+    public void Flush() { AfterFlush?.Invoke(); }
     public void Reset() { }
 }
 
 sealed class RecordingClicker : ITouchClicker
 {
+    public List<PressureClipboardAction> ClipboardActions = [];
+    public Action<PressureClipboardAction> ClipboardEvent;
+    public int DictationCalls, DictationEnds;
+    public bool BeginDictation(bool macParakeet) { DictationCalls++; return true; }
+    public void EndDictation() { DictationEnds++; }
+    public bool ClipboardShortcut(PressureClipboardAction action) { ClipboardActions.Add(action); ClipboardEvent?.Invoke(action); return true; }
     public List<TapButton> Buttons = [];
     public int DragStarts, DragMoves, DragEnds;
     public List<SwipeDirection> Swipes = [];
@@ -735,4 +891,15 @@ sealed class PenReport(Vector2 position, bool near) : ITabletReport, IProximityR
     public bool[] PenButtons { get; set; } = [false, false];
     public bool NearProximity { get; set; } = near;
     public uint HoverDistance { get; set; }
+}
+
+sealed class ReleaseMarker(List<string> events) : OpenTabletDriver.Plugin.Output.IPositionedPipelineElement<IDeviceReport>
+{
+    public OpenTabletDriver.Plugin.Output.PipelinePosition Position => OpenTabletDriver.Plugin.Output.PipelinePosition.PostTransform;
+    public event Action<IDeviceReport> Emit;
+    public void Consume(IDeviceReport report)
+    {
+        if (report is ITabletReport { Pressure: 0 }) events.Add("release");
+        Emit?.Invoke(report);
+    }
 }

@@ -1,0 +1,28 @@
+import AppKit
+
+func verify(_ condition: @autoclosure () -> Bool, _ message: String) {
+    precondition(condition(), message)
+}
+for key: CGKeyCode in [8, 9] {
+    for down in [true, false] {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: down)!
+        event.flags = .maskCommand
+        let native = NSEvent(cgEvent: event)!
+        verify(native.keyCode == key && native.modifierFlags.contains(.command), "Clipboard shortcut envelope")
+    }
+}
+for down in [true, false] {
+    let event = CGEvent(keyboardEventSource: nil, virtualKey: 63, keyDown: down)!
+    event.type = .flagsChanged
+    event.flags = down ? .maskSecondaryFn : []
+    let native = NSEvent(cgEvent: event)!
+    verify(native.type == .flagsChanged && native.keyCode == 63, "Fn-only dictation envelope")
+    verify(native.modifierFlags.contains(.function) == down, "Fn must have a matching release")
+}
+for down in [true, false] {
+    let event = CGEvent(keyboardEventSource: nil, virtualKey: 2, keyDown: down)!
+    event.flags = .maskSecondaryFn
+    let native = NSEvent(cgEvent: event)!
+    verify(native.keyCode == 2 && native.modifierFlags.contains(.function), "macOS Fn+D dictation envelope")
+}
+print("Verified clipboard and dictation NSEvent envelopes; no input events posted.")

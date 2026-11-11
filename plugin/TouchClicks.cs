@@ -14,6 +14,9 @@ public readonly record struct SwipeShortcut(ushort Key, ulong Flags)
 
 public interface ITouchClicker
 {
+    bool BeginDictation(bool macParakeet) => false;
+    void EndDictation() { }
+    bool ClipboardShortcut(PressureClipboardAction action) => false;
     void Click(TapButton button, double now);
     double DoubleClickInterval => 0.5;
     void BeginDrag(double now);
@@ -51,6 +54,7 @@ public sealed class MacTouchClicker : ITouchClicker
 {
     private readonly ClickSequence sequence = new();
     private bool dragging;
+    private bool dictationFnHeld;
     private double? doubleClickInterval;
 
     public double DoubleClickInterval => doubleClickInterval ??= ReadDoubleClickInterval();
@@ -78,6 +82,75 @@ public sealed class MacTouchClicker : ITouchClicker
     [DllImport(ObjC, EntryPoint = "objc_msgSend")] private static extern double SendDouble(IntPtr receiver, IntPtr selector);
     [DllImport(ObjC)] private static extern IntPtr objc_autoreleasePoolPush();
     [DllImport(ObjC)] private static extern void objc_autoreleasePoolPop(IntPtr pool);
+
+    public bool BeginDictation(bool macParakeet)
+    {
+        if (!OperatingSystem.IsMacOS()) return false;
+        if (macParakeet)
+        {
+            if (dictationFnHeld) return true;
+            dictationFnHeld = SendFn(true);
+            return dictationFnHeld;
+        }
+        IntPtr down = CGEventCreateKeyboardEvent(IntPtr.Zero, 2, true);
+        IntPtr up = CGEventCreateKeyboardEvent(IntPtr.Zero, 2, false);
+        try
+        {
+            if (down == IntPtr.Zero || up == IntPtr.Zero) return false;
+            CGEventSetFlags(down, 1UL << 23); CGEventSetFlags(up, 1UL << 23); // macOS Fn+D toggle
+            CGEventPost(0, down); CGEventPost(0, up);
+            return true;
+        }
+        finally
+        {
+            if (down != IntPtr.Zero) CFRelease(down);
+            if (up != IntPtr.Zero) CFRelease(up);
+        }
+    }
+
+    public void EndDictation()
+    {
+        if (!dictationFnHeld) return;
+        SendFn(false);
+        dictationFnHeld = false;
+    }
+
+    private static bool SendFn(bool down)
+    {
+        IntPtr ev = CGEventCreateKeyboardEvent(IntPtr.Zero, 63, down);
+        if (ev == IntPtr.Zero) return false;
+        try
+        {
+            CGEventSetType(ev, 12); // flagsChanged
+            CGEventSetFlags(ev, down ? 1UL << 23 : 0);
+            CGEventPost(0, ev);
+            return true;
+        }
+        finally { CFRelease(ev); }
+    }
+
+    public bool ClipboardShortcut(PressureClipboardAction action)
+    {
+        if (!OperatingSystem.IsMacOS() || action == PressureClipboardAction.None) return false;
+        ushort key = action == PressureClipboardAction.Copy ? (ushort)8 : (ushort)9; // C / V
+        IntPtr down = CGEventCreateKeyboardEvent(IntPtr.Zero, key, true);
+        IntPtr up = CGEventCreateKeyboardEvent(IntPtr.Zero, key, false);
+        try
+        {
+            if (down == IntPtr.Zero || up == IntPtr.Zero) return false;
+            foreach (var ev in new[] { down, up })
+            {
+                CGEventSetFlags(ev, 1UL << 20); // Command only
+                CGEventPost(0, ev);
+            }
+            return true;
+        }
+        finally
+        {
+            if (down != IntPtr.Zero) CFRelease(down);
+            if (up != IntPtr.Zero) CFRelease(up);
+        }
+    }
 
     public void Click(TapButton button, double now)
     {

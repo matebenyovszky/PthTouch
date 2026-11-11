@@ -28,6 +28,8 @@ struct SettingsChecks {
         preferences.interactiveDesktop = true; preferences.desktopTravel = 80
         preferences.joystick = true; preferences.joystickWidth = 25; preferences.joystickHeight = 30
         preferences.edgeBoost = 4; preferences.joystickCurve = 9
+        preferences.pressureCopy = true; preferences.pressurePaste = true; preferences.pressureRise = 22; preferences.pressureDrag = 2.5
+        preferences.pressureDictation = true; preferences.dictationTarget = "macOS"; preferences.dictationPressure = 65
         preferences.filterAllPen = true; preferences.penAcceleration = true; preferences.touchAcceleration = true
         preferences.slowGain = 0.8; preferences.fastGain = 1.6; preferences.accelerationSpeed = 200
         preferences.joystickSpeedY = 50000; preferences.joystickReverse = true; preferences.scrollNoise = true
@@ -49,6 +51,8 @@ struct SettingsChecks {
         do { _ = try document.merging(invalid); check(false, "Reject non-finite input") } catch { check(true, "Rejected non-finite input") }
         var invertedGain = preferences; invertedGain.slowGain = 1.8; invertedGain.fastGain = 1.2
         do { _ = try document.merging(invertedGain); check(false, "Reject inverted acceleration range") } catch { check(true, "Rejected inverted acceleration range") }
+        var invalidTarget = preferences; invalidTarget.dictationTarget = "unsupported"
+        do { _ = try document.merging(invalidTarget); check(false, "Reject unknown dictation shortcut") } catch { check(true, "Rejected unknown dictation shortcut") }
         let baseline = PthPreferences(); var external = baseline, edited = baseline
         external.xSensitivity = 35; external.desktopTravel = 90; edited.pinch = true
         let combined = external.applyingChanges(from: baseline, to: edited)
