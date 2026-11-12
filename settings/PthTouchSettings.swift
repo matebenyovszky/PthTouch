@@ -152,11 +152,10 @@ struct SettingsView: View {
                     }
                     Section("Velocity-based sensitivity (optional)") {
                         Toggle("Enable for pen hover", isOn: $model.values.penAcceleration)
-                        Toggle("Enable for one-finger touch", isOn: $model.values.touchAcceleration)
                         number("Slow movement multiplier", value: $model.values.slowGain, unit: "×")
                         number("Fast movement multiplier", value: $model.values.fastGain, unit: "×")
                         number("Full acceleration at", value: $model.values.accelerationSpeed, unit: "mm/s")
-                        Text("Multiplies the X/Y sensitivity above. Slow motion is precise; fast motion travels farther. Pen contact, buttons, touch dragging and scrolling keep their normal behaviour. Both switches off restore fixed sensitivity.")
+                        Text("Multiplies the X/Y sensitivity above. Slow motion is precise; fast motion travels farther. Pen contact, buttons, touch dragging and scrolling keep their normal behaviour. Turning this switch off restores fixed pen sensitivity.")
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Section("Upper pen button") {
@@ -195,8 +194,38 @@ struct SettingsView: View {
                             }
                         }
                     }
-                }.formStyle(.grouped).tabItem { Label("Pen", systemImage: "pencil.tip") }
+                    Section("Pen stability") {
+                        Toggle("Ignore unstable far hover", isOn: $model.values.limitHover)
+                        number("Hover distance limit (0 = tablet default)", value: $model.values.hoverLimit, unit: "sensor")
+                            .disabled(!model.values.limitHover)
+                        Text("PTH-851: 0 keeps the tablet's own near/far boundary. A smaller positive limit cuts hover off closer to the surface. Range 1–63 is raw sensor distance, not mm; calibrate at the desired physical height. Tip contact and held buttons retain their normal behavior.")
+                            .font(.caption).foregroundColor(.secondary)
+                        number("Hover deadband", value: $model.values.hoverDeadband, unit: "mm")
+                        Toggle("Reject isolated hover spikes", isOn: $model.values.rejectSpikes)
+                        Toggle("Filter all pen movement (including dragging)", isOn: $model.values.filterAllPen)
+                            .disabled(model.values.hoverDeadband <= 0)
+                        Toggle("Apply noise filtering while pen-scrolling", isOn: $model.values.scrollNoise)
+                            .disabled(model.values.hoverDeadband <= 0 || model.values.filterAllPen)
+                        Text("Suggested starting point: 0.10 mm with spike rejection. Zero disables the deadband and spike filter. General filtering also covers tip contact, held buttons, dragging and pen scrolling, with one shared coordinate filter. Otherwise, filtering applies to hover and optionally pen scrolling.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }.formStyle(.grouped).tabItem { Label("Pen & pen gestures", systemImage: "pencil.tip") }
                 Form {
+                    Section("Touch cursor speed") {
+                        Toggle("Use separate touch cursor settings", isOn: $model.values.separateTouch)
+                        Group {
+                            number("Touch X sensitivity", value: $model.values.touchX, unit: "px/mm")
+                            number("Touch Y sensitivity", value: $model.values.touchY, unit: "px/mm")
+                        }.disabled(!model.values.separateTouch)
+                        Toggle("Velocity-based touch sensitivity", isOn: $model.values.touchAcceleration)
+                        if model.values.separateTouch {
+                            number("Touch slow movement multiplier", value: $model.values.touchSlow, unit: "×")
+                            number("Touch fast movement multiplier", value: $model.values.touchFast, unit: "×")
+                            number("Touch full acceleration at", value: $model.values.touchSpeed, unit: "mm/s")
+                        }
+                        Text("Separate settings control the touch pointer and touch dragging without changing the pen. Velocity acceleration applies only to one-finger pointer motion. With separate settings off, touch follows the pen's sensitivity and acceleration gains. Two-finger scroll speed remains independent below.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
                     Section("Touch") {
                         Toggle("Tap to click", isOn: $model.values.tap)
                         Toggle("Tap again and hold to drag", isOn: $model.values.drag).disabled(!model.values.tap)
@@ -216,19 +245,7 @@ struct SettingsView: View {
                         Toggle("Pinch to zoom (experimental)", isOn: $model.values.pinch)
                     }
                 }.formStyle(.grouped).tabItem { Label("Touch & gestures", systemImage: "hand.point.up.left") }
-                Form {
-                    Section("Pen stability") {
-                        Toggle("Ignore unstable far hover", isOn: $model.values.limitHover)
-                        number("Hover deadband", value: $model.values.hoverDeadband, unit: "mm")
-                        Toggle("Reject isolated hover spikes", isOn: $model.values.rejectSpikes)
-                        Toggle("Filter all pen movement (including dragging)", isOn: $model.values.filterAllPen)
-                            .disabled(model.values.hoverDeadband <= 0)
-                        Toggle("Apply noise filtering while pen-scrolling", isOn: $model.values.scrollNoise)
-                            .disabled(model.values.hoverDeadband <= 0 || model.values.filterAllPen)
-                        Text("Suggested starting point: 0.10 mm with spike rejection. Zero disables the deadband and spike filter. General filtering also covers tip contact, held buttons, dragging and pen scrolling, with one shared coordinate filter. Otherwise, filtering applies to hover and optionally pen scrolling.")
-                            .font(.caption).foregroundColor(.secondary)
-                    }
-                }.formStyle(.grouped).tabItem { Label("Stability", systemImage: "waveform.path") }
+
             }
             .disabled(model.busy || !model.loaded)
             HStack(alignment: .center, spacing: 12) {

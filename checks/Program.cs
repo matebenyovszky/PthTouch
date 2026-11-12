@@ -945,6 +945,43 @@ Check(extraSink.PenActions.Last() == PenGestureAction.DesktopLeft && extraSink.C
 extraMode.Dispose();
 Check(extraSink.PenCancels > 0, "Unloading must cancel delayed native actions");
 
+var heightGate = new PenHoverHeightGate();
+byte[] HeightRaw(int distance, int fraction = 0) { var raw = new byte[10]; raw[0] = 2; raw[1] = 0x60; raw[9] = (byte)(distance * 4 + fraction); return raw; }
+Check(!heightGate.Update(HeightRaw(40, 3), 40, 0), "Coordinate fraction bits must not count as extra hover height");
+Check(heightGate.Update(HeightRaw(41), 40, 0), "Custom hover cutoff must reject higher sensor readings");
+Check(heightGate.Update(HeightRaw(40), 40, 0) && !heightGate.Update(HeightRaw(39), 40, 0),
+    "One sensor unit of height hysteresis must prevent boundary chatter and permit lower re-entry");
+Check(!heightGate.Update(HeightRaw(63), 40, 10), "Tip contact must bypass hover height limiting");
+Check(!heightGate.Update(HeightRaw(63), 0, 0) && !heightGate.Update([], 40, 0),
+    "Zero cutoff and unsupported report layouts must preserve prior tablet gating");
+var heightPointer = new RecordingPointer(); double heightTime = 0;
+var heightMode = new TrackpadRelativeMode { Pointer = heightPointer, Clicker = new RecordingClicker(), Sensitivity = new(20),
+    ResetTime = TimeSpan.FromMilliseconds(100), HoverDistanceLimit = 40, ClockSeconds = () => heightTime };
+void HeightAt(double t, float x, int distance) { heightTime = t; heightMode.Read(new PenReport(new(x,1000),true) { Raw = HeightRaw(distance) }); }
+HeightAt(0,1000,30); HeightAt(.01,1100,30);
+Check(heightPointer.LastPosition.X > 0, "Lower pen hover must retain ordinary cursor motion");
+HeightAt(.02,1400,45); HeightAt(.03,1600,45);
+Check(heightPointer.LastPosition == Vector2.Zero, "Height-rejected pen positions must not move the cursor");
+HeightAt(.04,1600,38);
+Check(heightPointer.LastPosition == Vector2.Zero, "Returning below the custom cutoff must reanchor without a cursor jump");
+HeightAt(.05,1700,38); Check(heightPointer.LastPosition.X > 0, "Relative motion resumes after height re-entry");
+heightMode.Dispose();
+
+Vector2 TouchSample(bool separate, bool accelerate = false, float slow = .9f, float fast = 1.35f)
+{
+    double t = 0; var p = new RecordingPointer();
+    using var m = new TrackpadRelativeMode { Pointer = p, Clicker = new RecordingClicker(), Sensitivity = new(20),
+        ClockSeconds = () => t, SeparateTouchSettings = separate, TouchSensitivityX = 10, TouchSensitivityY = 12,
+        TouchVelocityAcceleration = accelerate, TouchSlowGain = slow, TouchFastGain = fast };
+    m.Read(new TouchReport([Point(0,100,100)])); t = .01;
+    m.Read(new TouchReport([Point(0,110,110)])); return p.LastPosition;
+}
+var coupledTouch = TouchSample(false); var separateTouch = TouchSample(true);
+Check(Vector2.Distance(separateTouch, coupledTouch * new Vector2(.5f,.6f)) < .001f,
+    "Separate touch X/Y sensitivity must scale only touch output independently of pen sensitivity");
+Check(Vector2.Distance(TouchSample(true,true,.5f,.5f), separateTouch * .5f) < .001f,
+    "Touch acceleration must use its own gains when separate settings are enabled");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
