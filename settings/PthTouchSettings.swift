@@ -194,6 +194,11 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    Section("Cursor bounds") {
+                        Toggle("Keep cursor on connected displays", isOn: $model.values.keepOnDisplays)
+                        Text("Applies to pen, touch and dragging. The cursor can cross onto another display, but stays out of the invisible space around or between displays. Display layout changes are picked up automatically.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
                     Section("Pen stability") {
                         Toggle("Ignore unstable far hover", isOn: $model.values.limitHover)
                         number("Hover distance limit (0 = tablet default)", value: $model.values.hoverLimit, unit: "sensor")

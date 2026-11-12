@@ -14,6 +14,7 @@ public readonly record struct SwipeShortcut(ushort Key, ulong Flags)
 
 public interface ITouchClicker
 {
+    void SetCursorBounds(ICursorBounds? bounds) { }
     bool PenAction(PenGestureAction action) => false;
     void CancelPenActions() { }
     bool BeginDictation(bool macParakeet) => false;
@@ -54,6 +55,13 @@ public sealed class ClickSequence
 // are an actual macOS double click. All events use the existing host's access.
 public sealed class MacTouchClicker : ITouchClicker
 {
+    private ICursorBounds? cursorBounds;
+    public void SetCursorBounds(ICursorBounds? bounds) => cursorBounds = bounds;
+    private Point Bounded(Point position)
+    {
+        var point = cursorBounds?.LimitPoint(new(position.X, position.Y)) ?? new CursorPoint(position.X, position.Y);
+        return new Point { X = point.X, Y = point.Y };
+    }
     private readonly MacPenActions penActions = new();
     public bool PenAction(PenGestureAction action) =>
         penActions.Perform(action);
@@ -165,7 +173,7 @@ public sealed class MacTouchClicker : ITouchClicker
         IntPtr probe = CGEventCreate(IntPtr.Zero);
         if (probe == IntPtr.Zero)
             return;
-        var position = CGEventGetLocation(probe);
+        var position = Bounded(CGEventGetLocation(probe));
         CFRelease(probe);
         bool right = button == TapButton.Right;
         bool middle = button == TapButton.Middle;
@@ -317,8 +325,9 @@ public sealed class MacTouchClicker : ITouchClicker
         return position;
     }
 
-    private static void PostDragEvent(uint type, Point position)
+    private void PostDragEvent(uint type, Point position)
     {
+        position = Bounded(position);
         IntPtr pool = objc_autoreleasePoolPush();
         IntPtr ev = CGEventCreateMouseEvent(IntPtr.Zero, type, position, 0);
         try

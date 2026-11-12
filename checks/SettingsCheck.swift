@@ -21,9 +21,11 @@ struct SettingsChecks {
         let original: [String: Any] = ["Revision": "test", "Profiles": [profile, other], "FutureRoot": "keep"]
         let document = try ProfileSettings(document: original)
         check(document.hasPenScroll, "An unassigned lower button must not hide an assigned upper scroll button")
+        check(document.read().keepOnDisplays, "Cursor display bounds must default on")
         check(!document.read().eraserDelete && !document.read().desktopFlick, "The former guarded eraser setting must not silently enable unconditional Delete")
         var preferences = document.read()
         check(preferences.xSensitivity == 20 && preferences.resetMs == 100, "Load numeric values and reset time")
+        preferences.keepOnDisplays = false
         preferences.separateTouch = true; preferences.touchX = 16; preferences.touchY = 18
         preferences.touchSlow = 0.7; preferences.touchFast = 1.4; preferences.touchSpeed = 180; preferences.hoverLimit = 62
         preferences.xSensitivity = 22; preferences.swipes = true; preferences.middleTap = true
