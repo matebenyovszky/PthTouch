@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace PthTouch;
 
-public enum PenGestureAction { None, Delete, Undo, OpenAI }
+public enum PenGestureAction { None, Delete, DesktopRight, DesktopLeft }
 public readonly record struct FlickUpdate(PenGestureAction Action = PenGestureAction.None, bool JustArmed = false);
 
 public sealed class PressureFlickGesture
@@ -15,10 +15,10 @@ public sealed class PressureFlickGesture
     public bool Armed => armed;
     public void Reset() { highSince = motionSince = null; armed = blocked = hasPrevious = false; }
     public FlickUpdate Update(Vector2 mm, Vector2? tilt, float pressure, bool cancel, double now,
-        bool undoEnabled, bool aiEnabled, float pressureThreshold = .65f,
+        bool enabled, float pressureThreshold = .65f,
         float distanceMm = 6, float speedMmPerSecond = 100, float tiltChange = .12f, bool reverse = false)
     {
-        if ((!undoEnabled && !aiEnabled) || cancel || tilt is not Vector2 angle ||
+        if (!enabled || cancel || tilt is not Vector2 angle ||
             !float.IsFinite(mm.X) || !float.IsFinite(mm.Y) || !float.IsFinite(angle.X) ||
             !float.IsFinite(angle.Y) || !double.IsFinite(now) || !float.IsFinite(pressure))
         { Reset(); return default; }
@@ -58,8 +58,7 @@ public sealed class PressureFlickGesture
         float minimumTilt = float.IsFinite(tiltChange) ? Math.Clamp(tiltChange, .02f, 1) : .12f;
         if (travel < minimum || travel < MathF.Abs(delta.Y) * 1.5f || speed < minimumSpeed ||
             Vector2.Distance(angle, originTilt) < minimumTilt) return default;
-        var action = (delta.X > 0) != reverse ? (undoEnabled ? PenGestureAction.Undo : PenGestureAction.None)
-            : (aiEnabled ? PenGestureAction.OpenAI : PenGestureAction.None);
+        var action = (delta.X > 0) != reverse ? PenGestureAction.DesktopRight : PenGestureAction.DesktopLeft;
         Reset(); blocked = true;
         return new(action);
     }

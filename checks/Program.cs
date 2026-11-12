@@ -861,14 +861,14 @@ Check(!Erase(8.05, .3f) && !Erase(8.10, .4f) && Erase(8.15, 0), "A held/moving e
 
 var flickEngine = new PressureFlickGesture();
 FlickUpdate Flick(double t, float x, float tilt = 0, float pressure = .8f, bool cancel = false, float y = 0, bool reverse = false) =>
-    flickEngine.Update(new(x, y), new Vector2(tilt, 0), pressure, cancel, t, true, true, reverse: reverse);
+    flickEngine.Update(new(x, y), new Vector2(tilt, 0), pressure, cancel, t, true, reverse: reverse);
 Check(Flick(0, 0) == default, "Flick arming needs sustained pressure");
 Check(Flick(.045, 0).JustArmed, "Sustained pressure must arm the flick");
 Check(!Flick(.055, 2, .1f).JustArmed, "Flick motion must not arm the same gesture again");
-Check(Flick(.08, 8, .2f).Action == PenGestureAction.Undo, "Fast right movement with tilt change must undo");
+Check(Flick(.08, 8, .2f).Action == PenGestureAction.DesktopRight, "Fast right movement with tilt change must choose the right desktop gesture");
 Check(Flick(.09, 16, .4f).Action == PenGestureAction.None, "A held flick cannot repeat");
 Flick(.1, 16, pressure: 0); Flick(.12, 0); Flick(.17, 0); Flick(.18, -2, .1f);
-Check(Flick(.21, -8, .2f).Action == PenGestureAction.OpenAI, "The left flick must choose AI independently");
+Check(Flick(.21, -8, .2f).Action == PenGestureAction.DesktopLeft, "The left flick must choose the opposite desktop gesture");
 flickEngine.Reset(); Flick(1, 0); Flick(1.05, 0); Flick(1.06, 2);
 Check(Flick(1.09, 9).Action == PenGestureAction.None, "Fast straight movement without tilt must not trigger");
 flickEngine.Reset(); Flick(2, 0); Flick(2.05, 0); Flick(2.06, 2, .2f);
@@ -885,21 +885,22 @@ Check(Flick(6.79, 10, .3f).Action == PenGestureAction.None, "An expired arming w
 flickEngine.Reset(); Flick(10, 0);
 for (int i = 1; i <= 20; i++) Flick(10 + i * .1, 0);
 Flick(12.01, 2, .1f);
-Check(Flick(12.04, 8, .2f).Action == PenGestureAction.Undo,
+Check(Flick(12.04, 8, .2f).Action == PenGestureAction.DesktopRight,
     "Preparing a flick with a long firm hold must not consume its response window");
 flickEngine.Reset(); Flick(13, 0); Flick(13.05, 0);
 for (int i = 1; i <= 12; i++) Flick(13.05 + i * .1, i * .15f);
 Flick(14.26, 4, .1f);
-Check(Flick(14.29, 10, .2f).Action == PenGestureAction.Undo,
+Check(Flick(14.29, 10, .2f).Action == PenGestureAction.DesktopRight,
     "Slow squeeze drift must not start/expire the fast flick motion window");
 flickEngine.Reset(); Flick(15, 0, reverse: true); Flick(15.05, 0, reverse: true); Flick(15.06, 2, .1f, reverse: true);
-Check(Flick(15.09, 8, .2f, reverse: true).Action == PenGestureAction.OpenAI,
+Check(Flick(15.09, 8, .2f, reverse: true).Action == PenGestureAction.DesktopLeft,
     "The optional direction switch must reverse only the flick mapping");
-Check(flickEngine.Update(Vector2.Zero, null, 1, false, 8, true, true) == default,
+Check(flickEngine.Update(Vector2.Zero, null, 1, false, 8, true) == default,
     "Devices without tilt reports must not guess flick gestures");
-Check(MacPenActions.ResolveTarget("ChatGPT in browser").Url == "https://chatgpt.com/" &&
-    MacPenActions.ResolveTarget("ChatGPT/Codex").Bundle == "com.openai.codex" &&
-    MacPenActions.ResolveTarget("invalid") == default, "AI targets must use a fixed app/HTTPS allowlist");
+Check(MacPenActions.ShortcutFor(PenGestureAction.DesktopLeft) == SwipeShortcut.For(SwipeDirection.Left) &&
+    MacPenActions.ShortcutFor(PenGestureAction.DesktopRight) == SwipeShortcut.For(SwipeDirection.Right) &&
+    MacPenActions.ShortcutFor(PenGestureAction.Delete) == new SwipeShortcut(51, 0),
+    "Pen flicks must use the same opposite desktop shortcuts as three-finger swipes; eraser keeps plain Delete");
 
 
 var extraEvents = new List<string>();
@@ -909,7 +910,7 @@ double extraTime = 0;
 var extraMode = new TrackpadRelativeMode { Pointer = extraPointer, Clicker = extraSink,
     Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100), ClockSeconds = () => extraTime,
     EraserDeleteAfterContact = true, PressureCopySelection = true, PressureDoublePaste = true,
-    RightFlickUndo = true, LeftFlickAI = true,
+    PenFlickDesktopSwitching = true,
     Elements = [new ReleaseMarker(extraEvents)] };
 void Extra(double t, float x, uint pressure, float tilt = 0) {
     extraTime = t;
@@ -933,14 +934,14 @@ Check(extraSink.PenActions.Count == 2, "A stale eraser stream must not delete on
 extraSink.PenActions.RemoveAt(1);
 extraMode.Read(new ToolReport(false)); Extra(1, 1000, 1600); Extra(1.05, 1000, 1600);
 Extra(1.06, 1400, 1600, 8); Extra(1.09, 2600, 1600, 16);
-Check(extraSink.PenActions.Last() == PenGestureAction.Undo &&
-    extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "Undo"]), "Flick actions must release the tip before shortcut dispatch");
+Check(extraSink.PenActions.Last() == PenGestureAction.DesktopRight &&
+    extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "DesktopRight"]), "Flick actions must release the tip before shortcut dispatch");
 Extra(1.11, 3000, 1600, 25); Extra(1.14, 3000, 0);
 Check(extraSink.ClipboardActions.Count == 0 && extraSink.PenActions.Count == 2,
     "A captured flick must not leak later clipboard commands or repeat");
 Extra(2, 3000, 1600); Extra(2.05, 3000, 1600); Extra(2.06, 2600, 1600, 8); Extra(2.09, 1400, 1600, 16);
-Check(extraSink.PenActions.Last() == PenGestureAction.OpenAI && extraSink.ClipboardActions.Count == 0,
-    "The AI flick must open its target without a clipboard action");
+Check(extraSink.PenActions.Last() == PenGestureAction.DesktopLeft && extraSink.ClipboardActions.Count == 0,
+    "Desktop flick must not generate a clipboard command");
 extraMode.Dispose();
 Check(extraSink.PenCancels > 0, "Unloading must cancel delayed native actions");
 
@@ -970,7 +971,7 @@ sealed class RecordingClicker : ITouchClicker
     public List<PenGestureAction> PenActions = [];
     public Action<PenGestureAction> PenEvent;
     public int PenCancels;
-    public bool PenAction(PenGestureAction action, string target) {
+    public bool PenAction(PenGestureAction action) {
         PenActions.Add(action); PenEvent?.Invoke(action); return true;
     }
     public void CancelPenActions() => PenCancels++;

@@ -141,17 +141,13 @@ struct SettingsView: View {
                         Toggle("Send Delete after lifting the eraser", isOn: $model.values.eraserDelete)
                         Text("Touch or drag with the eraser end, then lift to send one normal Mac Delete (Backspace). No selection check: selected text is deleted; otherwise the preceding character may be deleted. Hover alone does nothing. Other apps handle Delete normally. Off by default.")
                             .font(.caption).foregroundColor(.secondary)
-                        Toggle("Strong pressure + right flick = Undo", isOn: $model.values.rightFlick)
-                        Toggle("Strong pressure + left flick = open AI", isOn: $model.values.leftFlick)
+                        Toggle("Strong pressure + pen flick switches desktops", isOn: $model.values.desktopFlick)
                         Toggle("Reverse flick directions", isOn: $model.values.reverseFlick)
-                        Picker("AI target", selection: $model.values.aiTarget) {
-                            ForEach(PthPreferences.aiTargets, id: \.self) { Text($0).tag($0) }
-                        }.disabled(!model.values.leftFlick)
                         number("Flick pressure threshold", value: $model.values.flickPressure, unit: "%")
                         number("Minimum flick travel", value: $model.values.flickDistance, unit: "mm")
                         number("Minimum flick speed", value: $model.values.flickSpeed, unit: "mm/s")
                         number("Minimum tilt change", value: $model.values.flickTilt, unit: "%")
-                        Text("Press firmly, then flick while changing pen tilt. Holding firm pressure keeps the gesture ready; after easing pressure, the response window is 0.65 s. Directions follow the physical tablet; reverse them above if needed. Right sends ⌘Z. Left opens the chosen app or browser page. AI opening does not read or transfer selected text and does not change the clipboard. The chosen desktop app must be installed; browser targets use your default browser. Tilt is a fraction of the sensor range, not degrees.")
+                        Text("Press firmly, then flick while changing pen tilt. Holding firm pressure keeps the gesture ready; after easing pressure, the response window is 0.65 s. Directions follow the physical tablet; reverse them above if needed. Left/right switch adjacent desktops with the same direction convention and Control+Arrow shortcuts as three-finger swipes. macOS shortcuts must be enabled and another desktop must exist. No app is launched and no text/clipboard is read or changed. Tilt is a fraction of the sensor range, not degrees.")
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Section("Velocity-based sensitivity (optional)") {

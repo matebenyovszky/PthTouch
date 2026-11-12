@@ -214,28 +214,26 @@ integration and the SwiftUI companion require a Windows implementation.
   cancel it. A timely proximity-loss report can finish a contact without a final
   zero-pressure packet. The new setting defaults off and does not inherit the
   former guarded eraser setting. Eraser contact cannot arm tip clipboard actions.
-- **Right flick:** strong pressure held for 40 ms arms the gesture. Holding that
-  pressure keeps it ready until the flick begins; after easing pressure the
-  response window is 650 ms. Move
-  quickly right while changing tilt to send Command+Z. The default requirements
-  are 65% pressure, 6 mm horizontal travel, 100 mm/s average motion speed and a
+- **Pen flick desktop switching:** strong pressure held for 40 ms arms the
+  gesture. Holding that pressure keeps it ready until the flick begins; after
+  easing pressure the response window is 650 ms. A quick left/right pen motion
+  with tilt change switches adjacent desktops, using the same direction convention
+  and Control+Function+Arrow shortcut as three-finger swipes. Fingers/pen moving
+  left reveal the desktop on the right; moving right reveals the desktop on the
+  left. **Reverse flick directions** optionally reverses that mapping. macOS
+  desktop shortcuts must be enabled and another desktop must exist.
+  Default thresholds are 65% pressure, 6 mm travel, 100 mm/s average speed and a
   tilt-vector change of 12% of the raw sensor range. Travel must dominate vertical
-  movement and finish within 180 ms of starting fast horizontal motion. Slow
-  squeeze drift does not start that timer. Each threshold is adjustable;
-  tilt units are sensor fractions, not degrees. Directions refer to the physical
-  tablet, with an optional **Reverse flick directions** switch. Devices without
-  tilt reports cannot trigger the action.
-- **Left flick:** opens the selected desktop app or HTTPS page in the default
-  browser. Presets are ChatGPT/Codex (`com.openai.codex`), ChatGPT
-  (`com.openai.chat`), Claude, ChatGPT in browser and Claude in browser. The
-  corresponding desktop app must already be installed. No app is installed by
-  the gesture.
+  movement and finish within 180 ms of starting fast horizontal motion; slow
+  squeeze drift does not start that timer. Thresholds are adjustable; tilt units
+  are sensor fractions, not degrees. Devices without tilt reports cannot trigger
+  the action. The switch defaults off.
 
-AI opening does not read or transfer selected text, inspect the AI composer,
-or change the clipboard. Native actions use NSWorkspace foreground-app identity
-and ordinary shortcuts/open targets. There is no Accessibility text inspection,
-renderer-tree activation or selection retry path. The companion removes the
-obsolete selection-transfer and guarded-eraser settings on save.
+Native actions use NSWorkspace foreground-app identity and ordinary keyboard
+shortcuts. There is no app launching, Undo binding, Accessibility text inspection,
+renderer-tree activation, selection transfer, clipboard reading or writing.
+The companion removes obsolete AI-transfer/target, guarded-eraser and former
+flick-action settings on save.
 
 Recognized flicks release the pen tip before dispatching the action, suppress
 additional tip events until physical release, and cancel competing copy/paste.

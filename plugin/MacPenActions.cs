@@ -1,9 +1,8 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace PthTouch;
 
-// Native shortcuts and fixed AI launch targets. Eraser Delete deliberately has
+// Native keyboard shortcuts. Eraser Delete deliberately has
 // ordinary keyboard behavior, without reading app fields or selection.
 public sealed class MacPenActions
 {
@@ -15,14 +14,11 @@ public sealed class MacPenActions
         NativeLibrary.Load("/System/Library/Frameworks/AppKit.framework/AppKit"));
     private readonly object gate = new();
     private int generation;
-    public static string[] Targets => ["ChatGPT/Codex", "ChatGPT", "Claude", "ChatGPT in browser", "Claude in browser"];
-    public static (string? Bundle, string? Url) ResolveTarget(string target) => target switch
+    public static SwipeShortcut ShortcutFor(PenGestureAction action) => action switch
     {
-        "ChatGPT/Codex" => ("com.openai.codex", null),
-        "ChatGPT" => ("com.openai.chat", null),
-        "Claude" => ("com.anthropic.claudefordesktop", null),
-        "ChatGPT in browser" => (null, "https://chatgpt.com/"),
-        "Claude in browser" => (null, "https://claude.ai/new"),
+        PenGestureAction.Delete => new(51, 0),
+        PenGestureAction.DesktopLeft => SwipeShortcut.For(SwipeDirection.Left),
+        PenGestureAction.DesktopRight => SwipeShortcut.For(SwipeDirection.Right),
         _ => default
     };
     [DllImport(CF)] private static extern void CFRelease(IntPtr value);
@@ -49,25 +45,23 @@ public sealed class MacPenActions
     }
     private static void Diagnostic(string message) =>
         OpenTabletDriver.Plugin.Log.Write("PTH Gestures", message, OpenTabletDriver.Plugin.LogLevel.Debug);
-    private static bool Shortcut(ushort key, bool command)
+    private static bool Shortcut(ushort key, ulong flags)
     {
         var down = CGEventCreateKeyboardEvent(IntPtr.Zero, key, true);
         var up = CGEventCreateKeyboardEvent(IntPtr.Zero, key, false);
         try
         {
             if (down == IntPtr.Zero || up == IntPtr.Zero) return false;
-            CGEventSetFlags(down, command ? 1UL << 20 : 0); CGEventSetFlags(up, command ? 1UL << 20 : 0);
+            CGEventSetFlags(down, flags); CGEventSetFlags(up, flags);
             CGEventPost(0, down); CGEventPost(0, up); return true;
         }
         finally { if (down != IntPtr.Zero) CFRelease(down); if (up != IntPtr.Zero) CFRelease(up); }
     }
     public void Cancel() { lock (gate) generation++; }
-    public bool Perform(PenGestureAction action, string target)
+    public bool Perform(PenGestureAction action)
     {
         if (!OperatingSystem.IsMacOS() || action == PenGestureAction.None) return false;
         _ = AppKit.Value;
-        var destination = ResolveTarget(target);
-        if (action == PenGestureAction.OpenAI && destination == default) return false;
         int sourcePid = FrontmostPid();
         if (sourcePid == 0) { Diagnostic("No foreground application; action skipped."); return false; }
         int ticket; lock (gate) ticket = ++generation;
@@ -80,21 +74,8 @@ public sealed class MacPenActions
                 {
                     if (ticket != generation) return;
                     if (FrontmostPid() != sourcePid) { Diagnostic("Foreground app changed; action cancelled."); return; }
-                    if (action == PenGestureAction.Delete)
-                    {
-                        Diagnostic(Shortcut(51, false) ? "Eraser Delete sent." : "Could not construct Delete event.");
-                        return;
-                    }
-                    if (action == PenGestureAction.Undo)
-                    {
-                        Diagnostic(Shortcut(6, true) ? "Undo sent." : "Could not construct Undo event.");
-                        return;
-                    }
-                    using var process = new Process { StartInfo = new ProcessStartInfo("/usr/bin/open") { UseShellExecute = false } };
-                    if (destination.Bundle is string bundle) { process.StartInfo.ArgumentList.Add("-b"); process.StartInfo.ArgumentList.Add(bundle); }
-                    else process.StartInfo.ArgumentList.Add(destination.Url!);
-                    process.Start();
-                    Diagnostic("AI target open requested.");
+                    var shortcut = ShortcutFor(action);
+                    Diagnostic(Shortcut(shortcut.Key, shortcut.Flags) ? $"{action} shortcut sent." : $"Could not construct {action} event.");
                 }
             }
             catch (Exception ex)

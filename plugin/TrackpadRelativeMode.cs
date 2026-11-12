@@ -54,10 +54,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
 
     [BooleanProperty("Delete after lifting the eraser", ""), DefaultPropertyValue(false)]
     public bool EraserDeleteAfterContact { get; set; }
-    [BooleanProperty("Strong-pressure right flick = undo", ""), DefaultPropertyValue(false)]
-    public bool RightFlickUndo { get; set; }
-    [BooleanProperty("Strong-pressure left flick = open AI", ""), DefaultPropertyValue(false)]
-    public bool LeftFlickAI { get; set; }
+    [BooleanProperty("Strong-pressure pen flick switches desktops", ""), DefaultPropertyValue(false)]
+    public bool PenFlickDesktopSwitching { get; set; }
     [BooleanProperty("Reverse flick directions", ""), DefaultPropertyValue(false)]
     public bool ReverseFlickDirections { get; set; }
     [Property("Flick pressure threshold"), DefaultPropertyValue(65f), Unit("%")]
@@ -68,10 +66,6 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     public float FlickSpeed { get; set; } = 100;
     [Property("Flick tilt change"), DefaultPropertyValue(12f), Unit("%")]
     public float FlickTiltPercent { get; set; } = 12;
-    public static string[] AITargets => MacPenActions.Targets;
-    [Property("AI target"), PropertyValidated(nameof(AITargets)), DefaultPropertyValue("ChatGPT/Codex")]
-    public string AITarget { get; set; } = "ChatGPT/Codex";
-
     // Public for deterministic output tests; the host uses the native default.
     public ITouchClicker Clicker { get; set; } = new MacTouchClicker();
 
@@ -272,7 +266,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 bool other = pen.PenButtons.Length > 0 && pen.PenButtons[0];
                 float normalPressure = maximumPressure > 0 ? pen.Pressure / maximumPressure : 0;
                 Vector2 physicalPosition = pen.Position * mmPerUnit;
-                if (normalPressure > 0 && (RightFlickUndo || LeftFlickAI || EraserDeleteAfterContact))
+                if (normalPressure > 0 && (PenFlickDesktopSwitching || EraserDeleteAfterContact))
                 {
                     contactPeak = MathF.Max(contactPeak, normalPressure);
                     if (deviceReport is ITiltReport rawTilt)
@@ -288,7 +282,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 var flick = pressureFlick.Update(physicalPosition,
                     deviceReport is ITiltReport tilt ? tilt.Tilt / 64f : null,
                     normalPressure, !validPressure || pen.PenButtons.Any(x => x), now,
-                    RightFlickUndo, LeftFlickAI, FlickPressurePercent / 100,
+                    PenFlickDesktopSwitching, FlickPressurePercent / 100,
                     FlickDistanceMm, FlickSpeed, FlickTiltPercent / 100, ReverseFlickDirections);
                 if (flick.JustArmed) Log.Write("PTH Gestures", "Pressure flick armed.", LogLevel.Debug);
                 if (!tipWasDown) flickTipSuppressed = false;
@@ -441,7 +435,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             {
                 var action = pendingPenAction; pendingPenAction = default;
                 Log.Write("PTH Gestures", $"Recognized {action}; dispatching after mouse-up.", LogLevel.Debug);
-                if (!Clicker.PenAction(action, AITarget))
+                if (!Clicker.PenAction(action))
                     Log.Write("PTH Gestures", $"{action} could not be queued.", LogLevel.Warning);
             }
             if (dictationHolding && (!upperPenButton || !PressureDictationEnabled)) EndDictationHold();

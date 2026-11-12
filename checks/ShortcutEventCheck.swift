@@ -4,7 +4,17 @@ func verify(_ condition: @autoclosure () -> Bool, _ message: String) {
     precondition(condition(), message)
 }
 for key: CGKeyCode in [6, 8, 9] {
+    for key: CGKeyCode in [123, 124] {
     for down in [true, false] {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: down)!
+        event.flags = [.maskControl, .maskSecondaryFn]
+        let native = NSEvent(cgEvent: event)!
+        verify(native.keyCode == key && native.modifierFlags.contains(.control) &&
+               native.modifierFlags.contains(.function) && !native.modifierFlags.contains(.command),
+               "Desktop arrow must match Control+Function classification in both directions")
+    }
+}
+for down in [true, false] {
         let event = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: down)!
         event.flags = .maskCommand
         let native = NSEvent(cgEvent: event)!
@@ -31,4 +41,4 @@ for down in [true, false] {
     let native = NSEvent(cgEvent: event)!
     verify(native.keyCode == 2 && native.modifierFlags.contains(.function), "macOS Fn+D dictation envelope")
 }
-print("Verified undo, selected-text delete, clipboard and dictation NSEvent envelopes; no input events posted.")
+print("Verified desktop switching, Delete, clipboard and dictation NSEvent envelopes; no input events posted.")
