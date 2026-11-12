@@ -167,8 +167,9 @@ velocity switches off restores the original fixed-sensitivity behaviour.
 ## Experimental pen-pressure gestures
 
 The **Pen → Pressure gestures** section has independent switches; all default
-to off. These features use ordinary macOS shortcuts through the host's existing
-permission, without reading clipboard contents or the app's actual selection.
+to off. The copy, double-pressure paste and dictation features below use ordinary
+macOS shortcuts through the host's existing permission, without reading clipboard
+contents or the app's actual selection.
 
 - **Copy at selection end:** drag with the tip, squeeze harder at the end, then
   lift. A selection-like drag must travel at least 1.5 mm (adjustable 0.5–10 mm).
@@ -196,6 +197,65 @@ contact baseline for 80 ms. Side buttons, eraser use, proximity loss, stale
 input, unloading and disabling cancel pending clipboard gestures. These are
 pen gestures, separate from native Apple Force Click. Actual pressure sensitivity
 and application shortcut behaviour require a hardware trial.
+
+## Experimental eraser and pressure-flick gestures
+
+The companion app's **Pen → Eraser and flick gestures** section exposes separate
+switches, all off by default. This release remains macOS-only; the pure gesture
+recognizers are portable C#, but native output, app launching, Accessibility
+integration and the SwiftUI companion require a Windows implementation.
+
+- **Delete after eraser contact:** touch or drag with the eraser end, then lift
+  to send one ordinary Mac Delete (Backspace, key 51). There is no selection,
+  editability or text-field-focus query: selected text is deleted, or the preceding
+  character may be deleted when there is no selection. Other apps apply their
+  normal Delete behavior. Hover never triggers it. Contact must reach 1% sensor
+  pressure and last 30 ms; stale input, side buttons, tool changes and disabling
+  cancel it. A timely proximity-loss report can finish a contact without a final
+  zero-pressure packet. The new setting defaults off and does not inherit the
+  former guarded eraser setting. Eraser contact cannot arm tip clipboard actions.
+- **Pen flick desktop switching:** strong pressure held for 40 ms arms the
+  gesture. Holding that pressure keeps it ready until the flick begins; after
+  easing pressure the response window is 650 ms. A quick left/right pen motion
+  with tilt change switches adjacent desktops, using the same direction convention
+  and Control+Function+Arrow shortcut as three-finger swipes. Fingers/pen moving
+  left reveal the desktop on the right; moving right reveals the desktop on the
+  left. **Reverse flick directions** optionally reverses that mapping. macOS
+  desktop shortcuts must be enabled and another desktop must exist.
+  Default thresholds are 65% pressure, 6 mm travel, 100 mm/s average speed and a
+  tilt-vector change of 12% of the raw sensor range. Travel must dominate vertical
+  movement and finish within 180 ms of starting fast horizontal motion; slow
+  squeeze drift does not start that timer. Thresholds are adjustable; tilt units
+  are sensor fractions, not degrees. Devices without tilt reports cannot trigger
+  the action. The switch defaults off.
+
+Native actions use NSWorkspace foreground-app identity and ordinary keyboard
+shortcuts. There is no app launching, Undo binding, Accessibility text inspection,
+renderer-tree activation, selection transfer, clipboard reading or writing.
+The companion removes obsolete AI-transfer/target, guarded-eraser and former
+flick-action settings on save.
+
+Recognized flicks release the pen tip before dispatching the action, suppress
+additional tip events until physical release, and cancel competing copy/paste.
+Side buttons, tool changes, stale reports and unloading cancel recognition.
+Already recognized commands can finish after the pen leaves proximity; unloading
+cancels pending native work. The foreground app is checked again before delayed
+shortcuts. Debug diagnostics record recognition, skipped-action reasons and
+contact pressure/tilt summaries, without selection text or clipboard content.
+Hardware behavior and application shortcut handling still need a manual trial.
+A local replay of ten recorded deliberate flicks recognized all ten in the actual
+filtered C# output mode after fixing premature timers; the recorded light control
+movements did not trigger flicks. That is one recording, not a guarantee against
+false gestures during other real-world use.
+
+### Touch recovery
+
+The pen and touch use separate USB interfaces. If pen input works but no touch
+reports arrive even with the pen far away and the physical touch switch on,
+unplugging and reconnecting the tablet can restore the touch interface. This
+was observed on the PTH-851; the underlying intermittent USB/firmware cause is
+not established. The plugin cannot synthesize missing touch reports, and does
+not repeatedly reset USB devices or weaken pen palm rejection to hide the issue.
 
 ## Build and checks
 

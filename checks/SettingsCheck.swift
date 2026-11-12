@@ -10,7 +10,7 @@ struct SettingsChecks {
     static func main() throws {
         let profile: [String: Any] = [
             "Tablet": "Test tablet", "OutputMode": ["Path": ProfileSettings.modePath,
-                "Settings": [["Property": "FutureSetting", "Value": "keep"]]],
+                "Settings": [["Property": "FutureSetting", "Value": "keep"], ["Property": "AIPasteSelection", "Value": true], ["Property": "EraserDeletesSelection", "Value": true], ["Property": "AITarget", "Value": "ChatGPT/Codex"], ["Property": "RightFlickUndo", "Value": true], ["Property": "LeftFlickAI", "Value": true]]],
             "RelativeModeSettings": ["XSensitivity": 20, "YSensitivity": 20,
                 "RelativeRotation": 17, "RelativeResetDelay": "00:00:00.1000000"],
             "Bindings": ["TipActivationThreshold": 1, "PenButtons": [NSNull(),
@@ -21,6 +21,7 @@ struct SettingsChecks {
         let original: [String: Any] = ["Revision": "test", "Profiles": [profile, other], "FutureRoot": "keep"]
         let document = try ProfileSettings(document: original)
         check(document.hasPenScroll, "An unassigned lower button must not hide an assigned upper scroll button")
+        check(!document.read().eraserDelete && !document.read().desktopFlick, "The former guarded eraser setting must not silently enable unconditional Delete")
         var preferences = document.read()
         check(preferences.xSensitivity == 20 && preferences.resetMs == 100, "Load numeric values and reset time")
         preferences.xSensitivity = 22; preferences.swipes = true; preferences.middleTap = true
@@ -29,6 +30,9 @@ struct SettingsChecks {
         preferences.joystick = true; preferences.joystickWidth = 25; preferences.joystickHeight = 30
         preferences.edgeBoost = 4; preferences.joystickCurve = 9
         preferences.pressureCopy = true; preferences.pressurePaste = true; preferences.pressureRise = 22; preferences.pressureDrag = 2.5
+        preferences.eraserDelete = true; preferences.desktopFlick = true; preferences.reverseFlick = true
+        preferences.flickPressure = 55; preferences.flickDistance = 8
+        preferences.flickSpeed = 200; preferences.flickTilt = 20
         preferences.pressureDictation = true; preferences.dictationTarget = "macOS"; preferences.dictationPressure = 65
         preferences.filterAllPen = true; preferences.penAcceleration = true; preferences.touchAcceleration = true
         preferences.slowGain = 0.8; preferences.fastGain = 1.6; preferences.accelerationSpeed = 200
@@ -43,6 +47,7 @@ struct SettingsChecks {
         check((selected["RelativeModeSettings"] as! [String: Any])["RelativeRotation"] as? Int == 17, "Preserve relative rotation")
         let mode = selected["OutputMode"] as! [String: Any]
         check((mode["Settings"] as! [[String: Any]]).contains { $0["Property"] as? String == "FutureSetting" && $0["Value"] as? String == "keep" }, "Preserve unknown plugin options")
+        check(!(mode["Settings"] as! [[String: Any]]).contains { $0["Property"] as? String == "AIPasteSelection" || $0["Property"] as? String == "EraserDeletesSelection" || ["AITarget", "RightFlickUndo", "LeftFlickAI"].contains($0["Property"] as? String ?? "") }, "Remove obsolete AI-transfer and guarded-eraser and former flick-action settings")
         let buttons = (selected["Bindings"] as! [String: Any])["PenButtons"] as! [Any]
         check(buttons[0] is NSNull, "Preserve unassigned lower pen button")
         let upper = buttons[1] as! [String: Any]
@@ -53,6 +58,8 @@ struct SettingsChecks {
         do { _ = try document.merging(invertedGain); check(false, "Reject inverted acceleration range") } catch { check(true, "Rejected inverted acceleration range") }
         var invalidTarget = preferences; invalidTarget.dictationTarget = "unsupported"
         do { _ = try document.merging(invalidTarget); check(false, "Reject unknown dictation shortcut") } catch { check(true, "Rejected unknown dictation shortcut") }
+        var invalidFlick = preferences; invalidFlick.flickTilt = 0
+        do { _ = try document.merging(invalidFlick); check(false, "Flick must require tilt change") } catch { check(true, "Rejected zero tilt threshold") }
         let baseline = PthPreferences(); var external = baseline, edited = baseline
         external.xSensitivity = 35; external.desktopTravel = 90; edited.pinch = true
         let combined = external.applyingChanges(from: baseline, to: edited)

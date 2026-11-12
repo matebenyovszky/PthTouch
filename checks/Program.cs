@@ -840,6 +840,111 @@ dictationMode.Dispose();
 Check(dictationSink.DictationCalls == 3 && dictationSink.DictationEnds == 3,
     "Unloading or replacing a mode must never leave the synthetic Fn modifier held");
 
+// Physical-tool identity is separate from pressure reports on Intuos Pro.
+var erase = new EraserContactGesture();
+bool Erase(double t, float p, bool eraser = true, bool buttons = false, bool enabled = true) =>
+    erase.Update(p, eraser, buttons, t, enabled);
+Check(!Erase(0, 0) && !Erase(.05, 0), "Eraser hover must never send Delete");
+Erase(.1, .2f);
+Check(Erase(.15, 0), "A stationary eraser tap must send Delete after lift without a drag/selection check");
+Check(!Erase(.16, 0), "One physical contact must send only one Delete");
+Erase(1, .2f); Check(!Erase(1.01, 0), "A very short pressure spike must not send Delete");
+Erase(2, .005f); Check(!Erase(2.05, 0), "Sub-contact sensor noise must not arm Delete");
+Erase(3, .2f); Erase(3.05, .2f, buttons: true); Erase(3.1, .2f);
+Check(!Erase(3.15, 0), "Side-button cancellation must last until contact lifts");
+Erase(4, .2f); Check(!Erase(4.05, 0, eraser: false), "Switching back to the tip must cancel Delete");
+Erase(5, .2f); Check(!Erase(5.4, 0), "A stale stream must not delete on a delayed release");
+Erase(6, .2f); Check(!Erase(6.05, 0, enabled: false), "Disabling eraser Delete must discard the contact");
+Erase(7, .2f); Check(!Erase(6.99, 0), "A backwards clock must cancel eraser Delete");
+Erase(8, .2f);
+Check(!Erase(8.05, .3f) && !Erase(8.10, .4f) && Erase(8.15, 0), "A held/moving eraser sends Delete only on release");
+
+var flickEngine = new PressureFlickGesture();
+FlickUpdate Flick(double t, float x, float tilt = 0, float pressure = .8f, bool cancel = false, float y = 0, bool reverse = false) =>
+    flickEngine.Update(new(x, y), new Vector2(tilt, 0), pressure, cancel, t, true, reverse: reverse);
+Check(Flick(0, 0) == default, "Flick arming needs sustained pressure");
+Check(Flick(.045, 0).JustArmed, "Sustained pressure must arm the flick");
+Check(!Flick(.055, 2, .1f).JustArmed, "Flick motion must not arm the same gesture again");
+Check(Flick(.08, 8, .2f).Action == PenGestureAction.DesktopRight, "Fast right movement with tilt change must choose the right desktop gesture");
+Check(Flick(.09, 16, .4f).Action == PenGestureAction.None, "A held flick cannot repeat");
+Flick(.1, 16, pressure: 0); Flick(.12, 0); Flick(.17, 0); Flick(.18, -2, .1f);
+Check(Flick(.21, -8, .2f).Action == PenGestureAction.DesktopLeft, "The left flick must choose the opposite desktop gesture");
+flickEngine.Reset(); Flick(1, 0); Flick(1.05, 0); Flick(1.06, 2);
+Check(Flick(1.09, 9).Action == PenGestureAction.None, "Fast straight movement without tilt must not trigger");
+flickEngine.Reset(); Flick(2, 0); Flick(2.05, 0); Flick(2.06, 2, .2f);
+Check(Flick(2.18, 7, .2f).Action == PenGestureAction.None, "Slow pen movement must not trigger a flick");
+flickEngine.Reset(); Flick(3, 0); Flick(3.05, 0); Flick(3.06, 2, .2f, y: 2);
+Check(Flick(3.08, 8, .2f, y: 8).Action == PenGestureAction.None, "Diagonal motion must not trigger a horizontal action");
+flickEngine.Reset(); Flick(4, 0); Flick(4.05, 0);
+Check(Flick(4.4, 10, .3f).Action == PenGestureAction.None, "A report gap must cancel an armed flick");
+flickEngine.Reset(); Flick(5, 0); Flick(5.05, 0); Flick(5.06, 2, .2f, cancel: true);
+Check(Flick(5.08, 10, .3f).Action == PenGestureAction.None, "Side buttons and tool changes must cancel flicks");
+flickEngine.Reset(); Flick(6, 0); Flick(6.05, 0);
+for (int i = 1; i < 8; i++) Flick(6.05 + i * .1, 0, pressure: .2f);
+Check(Flick(6.79, 10, .3f).Action == PenGestureAction.None, "An expired arming window must not execute later");
+flickEngine.Reset(); Flick(10, 0);
+for (int i = 1; i <= 20; i++) Flick(10 + i * .1, 0);
+Flick(12.01, 2, .1f);
+Check(Flick(12.04, 8, .2f).Action == PenGestureAction.DesktopRight,
+    "Preparing a flick with a long firm hold must not consume its response window");
+flickEngine.Reset(); Flick(13, 0); Flick(13.05, 0);
+for (int i = 1; i <= 12; i++) Flick(13.05 + i * .1, i * .15f);
+Flick(14.26, 4, .1f);
+Check(Flick(14.29, 10, .2f).Action == PenGestureAction.DesktopRight,
+    "Slow squeeze drift must not start/expire the fast flick motion window");
+flickEngine.Reset(); Flick(15, 0, reverse: true); Flick(15.05, 0, reverse: true); Flick(15.06, 2, .1f, reverse: true);
+Check(Flick(15.09, 8, .2f, reverse: true).Action == PenGestureAction.DesktopLeft,
+    "The optional direction switch must reverse only the flick mapping");
+Check(flickEngine.Update(Vector2.Zero, null, 1, false, 8, true) == default,
+    "Devices without tilt reports must not guess flick gestures");
+Check(MacPenActions.ShortcutFor(PenGestureAction.DesktopLeft) == SwipeShortcut.For(SwipeDirection.Left) &&
+    MacPenActions.ShortcutFor(PenGestureAction.DesktopRight) == SwipeShortcut.For(SwipeDirection.Right) &&
+    MacPenActions.ShortcutFor(PenGestureAction.Delete) == new SwipeShortcut(51, 0),
+    "Pen flicks must use the same opposite desktop shortcuts as three-finger swipes; eraser keeps plain Delete");
+
+
+var extraEvents = new List<string>();
+var extraSink = new RecordingClicker { PenEvent = action => extraEvents.Add(action.ToString()) };
+var extraPointer = new RecordingPointer { AfterFlush = () => extraEvents.Add("flush") };
+double extraTime = 0;
+var extraMode = new TrackpadRelativeMode { Pointer = extraPointer, Clicker = extraSink,
+    Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100), ClockSeconds = () => extraTime,
+    EraserDeleteAfterContact = true, PressureCopySelection = true, PressureDoublePaste = true,
+    PenFlickDesktopSwitching = true,
+    Elements = [new ReleaseMarker(extraEvents)] };
+void Extra(double t, float x, uint pressure, float tilt = 0) {
+    extraTime = t;
+    extraMode.Read(new PenReport(new(x, 1000), true) { Pressure = pressure, Tilt = new(tilt, 0) });
+}
+extraMode.Read(new ToolReport(true));
+Extra(0, 1000, 409); Extra(.05, 1800, 409); Extra(.1, 1800, 1600);
+Extra(.15, 1800, 1600); Extra(.18, 1800, 0);
+Check(extraSink.PenActions.SequenceEqual([PenGestureAction.Delete]) && extraSink.ClipboardActions.Count == 0,
+    "Separate eraser identity must reach ordinary pen packets and exclude tip clipboard gestures");
+Check(extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "Delete"]),
+    "Eraser deletion must follow native mouse-up and flush");
+extraMode.Read(new ToolReport(true)); Extra(.3, 1000, 409); Extra(.35, 1800, 409);
+extraTime = .38; extraMode.Read(new OutOfRangeReport());
+Check(extraSink.PenActions.Count == 2 && extraSink.PenActions.Last() == PenGestureAction.Delete &&
+    extraEvents.TakeLast(2).SequenceEqual(["flush", "Delete"]),
+    "An eraser leaving range without a zero-pressure packet must finalize only after mouse reset/flush");
+extraMode.Read(new ToolReport(true)); Extra(.5, 1000, 409); Extra(.55, 1800, 409);
+extraTime = .9; extraMode.Read(new OutOfRangeReport());
+Check(extraSink.PenActions.Count == 2, "A stale eraser stream must not delete on a late proximity-loss report");
+extraSink.PenActions.RemoveAt(1);
+extraMode.Read(new ToolReport(false)); Extra(1, 1000, 1600); Extra(1.05, 1000, 1600);
+Extra(1.06, 1400, 1600, 8); Extra(1.09, 2600, 1600, 16);
+Check(extraSink.PenActions.Last() == PenGestureAction.DesktopRight &&
+    extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "DesktopRight"]), "Flick actions must release the tip before shortcut dispatch");
+Extra(1.11, 3000, 1600, 25); Extra(1.14, 3000, 0);
+Check(extraSink.ClipboardActions.Count == 0 && extraSink.PenActions.Count == 2,
+    "A captured flick must not leak later clipboard commands or repeat");
+Extra(2, 3000, 1600); Extra(2.05, 3000, 1600); Extra(2.06, 2600, 1600, 8); Extra(2.09, 1400, 1600, 16);
+Check(extraSink.PenActions.Last() == PenGestureAction.DesktopLeft && extraSink.ClipboardActions.Count == 0,
+    "Desktop flick must not generate a clipboard command");
+extraMode.Dispose();
+Check(extraSink.PenCancels > 0, "Unloading must cancel delayed native actions");
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
@@ -863,6 +968,13 @@ sealed class RecordingPointer : IRelativePointer, IMouseScrollHandler, ISynchron
 
 sealed class RecordingClicker : ITouchClicker
 {
+    public List<PenGestureAction> PenActions = [];
+    public Action<PenGestureAction> PenEvent;
+    public int PenCancels;
+    public bool PenAction(PenGestureAction action) {
+        PenActions.Add(action); PenEvent?.Invoke(action); return true;
+    }
+    public void CancelPenActions() => PenCancels++;
     public List<PressureClipboardAction> ClipboardActions = [];
     public Action<PressureClipboardAction> ClipboardEvent;
     public int DictationCalls, DictationEnds;
@@ -883,13 +995,14 @@ sealed class RecordingClicker : ITouchClicker
     public void EndDrag() => DragEnds++;
 }
 
-sealed class PenReport(Vector2 position, bool near) : ITabletReport, IProximityReport
+sealed class PenReport(Vector2 position, bool near) : ITabletReport, IProximityReport, ITiltReport
 {
     public byte[] Raw { get; set; } = [];
     public Vector2 Position { get; set; } = position;
     public uint Pressure { get; set; }
     public bool[] PenButtons { get; set; } = [false, false];
     public bool NearProximity { get; set; } = near;
+    public Vector2 Tilt { get; set; }
     public uint HoverDistance { get; set; }
 }
 
@@ -902,4 +1015,9 @@ sealed class ReleaseMarker(List<string> events) : OpenTabletDriver.Plugin.Output
         if (report is ITabletReport { Pressure: 0 }) events.Add("release");
         Emit?.Invoke(report);
     }
+}
+
+sealed class ToolReport(bool eraser) : IEraserReport {
+    public byte[] Raw { get; set; } = [];
+    public bool Eraser { get; set; } = eraser;
 }

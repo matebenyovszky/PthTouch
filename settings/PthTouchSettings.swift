@@ -137,6 +137,19 @@ struct SettingsView: View {
                         Text("Drag to select, squeeze harder at the end, then lift to copy. To paste, stay in place and squeeze twice without lifting, relaxing between peaks, then lift. Commands run after mouse-up. A selection-like pen drag arms copying; stationary double pressure arms pasting. These gestures do not inspect the app's actual selection. Strong upper-button pressure pauses pen scrolling. MacParakeet holds Fn until you release the pen button; macOS sends its Fn+D toggle. Stationary pressure peaks keep the cursor in place. MacParakeet must be running with its Fn shortcut configured.")
                             .font(.caption).foregroundColor(.secondary)
                     }
+                    Section("Eraser and flick gestures (experimental)") {
+                        Toggle("Send Delete after lifting the eraser", isOn: $model.values.eraserDelete)
+                        Text("Touch or drag with the eraser end, then lift to send one normal Mac Delete (Backspace). No selection check: selected text is deleted; otherwise the preceding character may be deleted. Hover alone does nothing. Other apps handle Delete normally. Off by default.")
+                            .font(.caption).foregroundColor(.secondary)
+                        Toggle("Strong pressure + pen flick switches desktops", isOn: $model.values.desktopFlick)
+                        Toggle("Reverse flick directions", isOn: $model.values.reverseFlick)
+                        number("Flick pressure threshold", value: $model.values.flickPressure, unit: "%")
+                        number("Minimum flick travel", value: $model.values.flickDistance, unit: "mm")
+                        number("Minimum flick speed", value: $model.values.flickSpeed, unit: "mm/s")
+                        number("Minimum tilt change", value: $model.values.flickTilt, unit: "%")
+                        Text("Press firmly, then flick while changing pen tilt. Holding firm pressure keeps the gesture ready; after easing pressure, the response window is 0.65 s. Directions follow the physical tablet; reverse them above if needed. Left/right switch adjacent desktops with the same direction convention and Control+Arrow shortcuts as three-finger swipes. macOS shortcuts must be enabled and another desktop must exist. No app is launched and no text/clipboard is read or changed. Tilt is a fraction of the sensor range, not degrees.")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
                     Section("Velocity-based sensitivity (optional)") {
                         Toggle("Enable for pen hover", isOn: $model.values.penAcceleration)
                         Toggle("Enable for one-finger touch", isOn: $model.values.touchAcceleration)
