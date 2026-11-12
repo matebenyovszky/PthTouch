@@ -69,8 +69,49 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     // Public for deterministic output tests; the host uses the native default.
     public ITouchClicker Clicker { get; set; } = new MacTouchClicker();
 
+    [BooleanProperty("Keep cursor on connected displays", ""), DefaultPropertyValue(true)]
+    public bool KeepCursorOnDisplays { get; set; } = true;
+    // Optional deterministic environment for tests/alternate pointer backends.
+    public ICursorBounds? BoundsOverride { get; set; }
+    private MacCursorBounds? nativeBounds;
+    private IRelativePointer? pointer;
+    private bool stockMacPointer, ownsPointer;
+    private ICursorBounds? ActiveBounds()
+    {
+        if (!KeepCursorOnDisplays) return null;
+        if (BoundsOverride is not null) return BoundsOverride;
+        // Never inspect the live desktop for fake pointers in deterministic checks.
+        // OTD's stock macOS relative pointer constructs the native event later.
+        return stockMacPointer ? nativeBounds ??= new MacCursorBounds() : null;
+    }
+
     [Resolved]
-    public override IRelativePointer? Pointer { get; set; }
+    public override IRelativePointer? Pointer
+    {
+        get => pointer;
+        set
+        {
+            pointer = value; ownsPointer = false;
+            stockMacPointer = OperatingSystem.IsMacOS() && value?.GetType().FullName ==
+                "OpenTabletDriver.Desktop.Interop.Input.Relative.MacOSRelativePointer";
+            if (!stockMacPointer) return;
+            try
+            {
+                var bounded = BoundedPointerFactory.Create(value!.GetType(),
+                    (ev, x, y) => MacCursorBounds.WriteRelativeEvent(ev, x, y, ActiveBounds()));
+                if (bounded is not null)
+                {
+                    pointer = bounded; ownsPointer = true;
+                    Log.Write("PTH Bounds", "Native final-event cursor clamp active.", LogLevel.Debug);
+                }
+                else Log.Write("PTH Bounds", "Native position hook unavailable; using delta clamp.", LogLevel.Warning);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("PTH Bounds", $"Native position hook unavailable ({ex.GetType().Name}); using delta clamp.", LogLevel.Warning);
+            }
+        }
+    }
 
     [BooleanProperty("Copy after a selection-ending pressure peak", ""), DefaultPropertyValue(false)]
     public bool PressureCopySelection { get; set; }
@@ -200,6 +241,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         {
             if (disposed) return;
             double now = ClockSeconds();
+            Clicker.SetCursorBounds(ActiveBounds());
             if (deviceReport is ITouchReport report)
             {
                 HandleTouch(report, now);
@@ -449,6 +491,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         lock (sync)
         {
             if (disposed) return;
+            if (!ownsPointer && report is IAbsolutePositionReport position && ActiveBounds() is ICursorBounds bounds)
+                position.Position = bounds.LimitDelta(position.Position);
             base.OnOutput(report); // Binding releases and mouse-up are flushed first.
             if ((report is ITabletReport { Pressure: 0 } || report is OutOfRangeReport) && pendingPenAction != PenGestureAction.None)
             {
@@ -570,6 +614,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         {
             Vector2 delta = Vector2.Transform(cursor,
                 Matrix3x2.CreateRotation(-Rotation * MathF.PI / 180));
+            if (!ownsPointer && ActiveBounds() is ICursorBounds bounds) delta = bounds.LimitDelta(delta);
             if (touchDragging)
                 Clicker.MoveDrag(delta);
             else
@@ -652,6 +697,9 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             if (touchDragging)
                 Clicker.EndDrag();
             touchDragging = false;
+            if (ownsPointer && Pointer is ISynchronousPointer owned) owned.Reset();
+            Clicker.SetCursorBounds(null);
+            nativeBounds?.Dispose(); nativeBounds = null;
             base.Dispose(disposing);
         }
     }

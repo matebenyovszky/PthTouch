@@ -2,6 +2,7 @@ import Foundation
 
 struct PthPreferences: Equatable {
     var xSensitivity = 20.0, ySensitivity = 20.0, resetMs = 100.0
+    var keepOnDisplays = true
     var separateTouch = false
     var touchX = 20.0, touchY = 20.0, touchSlow = 0.9, touchFast = 1.35, touchSpeed = 150.0, hoverLimit = 0.0
     var touchScroll = 12.0, hoverDeadband = 0.0
@@ -25,7 +26,7 @@ struct PthPreferences: Equatable {
             \.xSensitivity, \.ySensitivity, \.resetMs, \.touchScroll, \.hoverDeadband, \.penScrollX, \.penScrollY, \.desktopTravel, \.joystickWidth, \.joystickHeight, \.joystickSpeedX, \.joystickSpeedY, \.joystickDeadzone, \.joystickCurve, \.edgeBoost, \.slowGain, \.fastGain, \.accelerationSpeed, \.pressureRise, \.pressureDrag, \.dictationPressure, \.flickPressure, \.flickDistance, \.flickSpeed, \.flickTilt, \.touchX, \.touchY, \.touchSlow, \.touchFast, \.touchSpeed, \.hoverLimit]
         let toggles: [WritableKeyPath<PthPreferences, Bool>] = [
             \.tap, \.drag, \.natural, \.swipes, \.pinch, \.limitHover, \.rejectSpikes,
-            \.middleTap, \.penScrollInvert, \.penScrollFreeze, \.interactiveDesktop, \.joystick, \.joystickReverse, \.scrollNoise, \.penAcceleration, \.touchAcceleration, \.filterAllPen, \.pressureCopy, \.pressurePaste, \.pressureDictation, \.eraserDelete, \.desktopFlick, \.reverseFlick, \.separateTouch]
+            \.middleTap, \.penScrollInvert, \.penScrollFreeze, \.interactiveDesktop, \.joystick, \.joystickReverse, \.scrollNoise, \.penAcceleration, \.touchAcceleration, \.filterAllPen, \.pressureCopy, \.pressurePaste, \.pressureDictation, \.eraserDelete, \.desktopFlick, \.reverseFlick, \.separateTouch, \.keepOnDisplays]
         for key in numbers where baseline[keyPath: key] != edited[keyPath: key] { result[keyPath: key] = edited[keyPath: key] }
         for key in toggles where baseline[keyPath: key] != edited[keyPath: key] { result[keyPath: key] = edited[keyPath: key] }
         if baseline.dictationTarget != edited.dictationTarget { result.dictationTarget = edited.dictationTarget }
@@ -38,7 +39,7 @@ struct PthPreferences: Equatable {
         return numbers.allSatisfy { abs($0.0 - $0.1) < 0.0001 } &&
             tap == other.tap && drag == other.drag && natural == other.natural && swipes == other.swipes &&
             pinch == other.pinch && limitHover == other.limitHover && rejectSpikes == other.rejectSpikes &&
-            separateTouch == other.separateTouch && eraserDelete == other.eraserDelete && desktopFlick == other.desktopFlick && reverseFlick == other.reverseFlick &&
+            keepOnDisplays == other.keepOnDisplays && separateTouch == other.separateTouch && eraserDelete == other.eraserDelete && desktopFlick == other.desktopFlick && reverseFlick == other.reverseFlick &&
             dictationTarget == other.dictationTarget && pressureDictation == other.pressureDictation && pressureCopy == other.pressureCopy && pressurePaste == other.pressurePaste && filterAllPen == other.filterAllPen && penAcceleration == other.penAcceleration && touchAcceleration == other.touchAcceleration && middleTap == other.middleTap && joystick == other.joystick && joystickReverse == other.joystickReverse && scrollNoise == other.scrollNoise && interactiveDesktop == other.interactiveDesktop && penScrollInvert == other.penScrollInvert && penScrollFreeze == other.penScrollFreeze
     }
 }
@@ -76,6 +77,7 @@ struct ProfileSettings {
             let parts = duration.split(separator: ":").compactMap { Double($0) }
             if parts.count == 3 { p.resetMs = (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000 }
         }
+        p.keepOnDisplays = values["KeepCursorOnDisplays"] as? Bool ?? p.keepOnDisplays
         p.touchScroll = Self.number(values["ScrollSensitivity"], p.touchScroll)
         p.hoverDeadband = Self.number(values["HoverJitterDeadband"], p.hoverDeadband)
         p.tap = values["TapToClick"] as? Bool ?? p.tap
@@ -169,6 +171,7 @@ struct ProfileSettings {
         profile["RelativeModeSettings"] = relative
         var mode = profile["OutputMode"] as? [String: Any] ?? [:]
         mode["Settings"] = Self.updated(mode["Settings"], with: [
+            "KeepCursorOnDisplays": p.keepOnDisplays,
             "SeparateTouchSettings": p.separateTouch, "TouchSensitivityX": p.touchX, "TouchSensitivityY": p.touchY,
             "TouchSlowGain": p.touchSlow, "TouchFastGain": p.touchFast, "TouchAccelerationSpeed": p.touchSpeed,
             "HoverDistanceLimit": p.hoverLimit,

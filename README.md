@@ -148,6 +148,36 @@ median windows never stack. It defaults to off to preserve unfiltered drawing
 behaviour for existing users. Pressure and button values continue through the
 normal pipeline; zero deadband disables coordinate filtering.
 
+## Keep the cursor on connected displays
+
+**Pen & pen gestures → Cursor bounds → Keep cursor on connected displays** is
+on by default. It applies to pen movement, one-finger touch, pen dragging and
+tap-and-drag. The target is kept inside the union of actual display rectangles,
+including monitors with negative origins, different sizes and vertical offsets.
+It can cross onto another display; invisible corners/gaps in the enclosing
+bounding box are excluded. Edge overshoot is discarded, so inward movement
+resumes immediately. An already off-screen position is brought back on the next
+movement. Menu bars and Docks remain reachable.
+
+Geometry uses [CoreGraphics global display bounds](https://developer.apple.com/documentation/coregraphics/cgdisplaybounds(_:)),
+the same coordinate space as native mouse events, without Retina pixel scaling.
+Display reconfiguration invalidates a small cache, with a 250 ms polling fallback.
+The callback is unregistered when a mode is replaced. No screen contents are
+captured and no new permission/event tap is needed.
+
+For the stock OTD macOS relative pointer, a runtime subclass overrides only its
+protected final event-position hook. The host still handles pressure, tilt,
+eraser state, buttons and flushing; the actual outgoing position and delta fields
+are constrained together. The hook's signature is checked, with a pre-output
+delta-clamp fallback if an unsupported host changes that API. The plugin does not
+bundle or replace OTD.Desktop. Its owned pointer releases held buttons when the
+mode is disposed. Native touch clicks/drag events also clamp their final target.
+
+The bounds option can be disabled to restore unrestricted synthetic movement.
+This affects this plugin's output, not input injected by unrelated applications.
+Multi-display geometry is covered by simulated layouts; available physical
+monitor arrangements still need a hardware trial.
+
 ## Separate pen and touch cursor settings
 
 The companion's **Touch & gestures → Touch cursor speed** section can enable

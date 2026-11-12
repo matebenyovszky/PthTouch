@@ -982,6 +982,84 @@ Check(Vector2.Distance(separateTouch, coupledTouch * new Vector2(.5f,.6f)) < .00
 Check(Vector2.Distance(TouchSample(true,true,.5f,.5f), separateTouch * .5f) < .001f,
     "Touch acceleration must use its own gains when separate settings are enabled");
 
+IntPtr hookedEvent = IntPtr.Zero; Vector2 hookedDelta = default;
+var hooked = BoundedPointerFactory.Create(typeof(VirtualPointerFixture), (ev,x,y) => { hookedEvent=ev;hookedDelta=new(x,y); });
+hooked!.SetPosition(new(3,4));
+Check(hookedEvent == new IntPtr(42) && hookedDelta == new Vector2(3,4),
+    "The native protected position hook must route through the supplied final-event writer");
+var otherHooked = BoundedPointerFactory.Create(typeof(VirtualPointerFixture), (_,x,y) => hookedDelta=new(x*2,y*2));
+otherHooked!.SetPosition(new(2,3));
+Check(hooked.GetType()==otherHooked.GetType() && hookedDelta==new Vector2(4,6),
+    "Runtime pointer types must be reused while keeping each mode's writer separate");
+Check(BoundedPointerFactory.Create(typeof(UnsupportedPointerFixture), (_,_,_)=>{}) is null,
+    "Incompatible pointer implementations must decline the native hook cleanly");
+
+// Display union geometry: no native desktop reads or input events.
+CursorDisplay[] singleScreen = [new(0,0,100,100)];
+Check(singleScreen.Any(d=>d.Contains(CursorBounds.Clamp(new(double.MaxValue,double.MaxValue),singleScreen))), "Extreme finite outliers must still project onto a display");
+Check(CursorBounds.Clamp(new(120,130), singleScreen) == new CursorPoint(99,99), "Outer right/bottom boundaries must keep the hotspot on-screen");
+Check(CursorBounds.Clamp(new(-20,-30), singleScreen) == new CursorPoint(0,0), "Outer left/top boundaries must clamp");
+Check(CursorBounds.Clamp(new(99.75,50), singleScreen) == new CursorPoint(99.75,50), "Valid fractional coordinates on the last pixel remain valid");
+CursorDisplay[] offsetScreens = [new(0,0,100,100),new(100,50,100,100)];
+Check(CursorBounds.Clamp(new(110,10),offsetScreens) == new CursorPoint(99,10), "An invisible corner inside the bounding box must not count as a screen");
+Check(CursorBounds.Clamp(new(110,60),offsetScreens) == new CursorPoint(110,60), "The neighbouring display must remain reachable across its shared edge");
+CursorDisplay[] negativeScreens = [new(-200,-50,200,100),new(0,0,100,100)];
+Check(CursorBounds.Clamp(new(-80,-20),negativeScreens) == new CursorPoint(-80,-20) &&
+    CursorBounds.Clamp(new(-250,-20),negativeScreens) == new CursorPoint(-200,-20), "Negative-origin monitors must retain their global coordinates");
+CursorDisplay[] stackedScreens = [new(0,-100,100,100),new(0,0,100,100)];
+Check(CursorBounds.Clamp(new(50,-10),stackedScreens) == new CursorPoint(50,-10), "Displays above the primary must remain reachable");
+CursorDisplay[] spacedScreens = [new(0,0,100,100),new(200,0,100,100)];
+var gapPoint = CursorBounds.Clamp(new(150,50),spacedScreens);
+Check(spacedScreens.Any(d=>d.Contains(gapPoint)), "A gap between monitors must project onto an actual display");
+CursorDisplay[] logicalScreens = [new(0,0,1920,1080),new(1920,-200,2560,1440)];
+Check(CursorBounds.Clamp(new(2500,-100),logicalScreens) == new CursorPoint(2500,-100), "Mixed-size/HiDPI layouts must use global bounds without pixel scaling");
+Check(CursorBounds.Clamp(new(25,25),[new(0,0,100,100),new(0,0,100,100)]) == new CursorPoint(25,25), "Mirrored displays must not affect valid positions");
+Check(CursorBounds.Clamp(new(10,20),[]) == new CursorPoint(10,20) &&
+    CursorBounds.Clamp(new(10,20),[new(0,0,0,100)]) == new CursorPoint(10,20), "Unavailable/invalid geometry must not freeze normal input");
+Check(CursorBounds.Delta(new(50,50), new(float.NaN,0),singleScreen) == Vector2.Zero,
+    "Invalid motion must not create a non-finite cursor location");
+var removedDisplay = CursorBounds.Delta(new(250,50),Vector2.Zero,singleScreen);
+Check(removedDisplay == new Vector2(-151,0), "An already off-screen cursor must recover when its display disappears");
+
+var boundEnv = new SimulatedCursorBounds { Current = new(98,50), Displays = singleScreen };
+var boundPointer = new RecordingPointer { AfterMove = boundEnv.Move };
+var boundSink = new RecordingClicker { AfterDragMove = boundEnv.Move };
+double boundTime = 0;
+using (var boundMode = new TrackpadRelativeMode { Pointer=boundPointer, Clicker=boundSink,
+    BoundsOverride=boundEnv, Sensitivity=new(20), ResetTime=TimeSpan.FromMilliseconds(100), ClockSeconds=()=>boundTime })
+{
+    void BoundPen(double t,float x) { boundTime=t;boundMode.Read(new PenReport(new(x,1000),true)); }
+    BoundPen(0,1000); BoundPen(.01,1100); BoundPen(.02,1200);
+    Check(boundEnv.Current.X == 99, "The actual pen-output path must discard edge overshoot");
+    BoundPen(.03,1195);
+    Check(boundEnv.Current.X < 99, "Moving inward after repeated edge motion must resume immediately without overflow debt");
+    boundMode.KeepCursorOnDisplays=false; BoundPen(.04,1300);
+    Check(boundEnv.Current.X > 99, "The shared bounds switch must disable pen clipping when requested");
+}
+boundEnv.Current=new(98,50); boundTime=0;
+using (var boundTouch = new TrackpadRelativeMode { Pointer=boundPointer,Clicker=boundSink,BoundsOverride=boundEnv,
+    Sensitivity=new(20),ClockSeconds=()=>boundTime })
+{
+    boundTouch.Read(new TouchReport([Point(0,100,100)])); boundTime=.01;
+    boundTouch.Read(new TouchReport([Point(0,110,100)]));
+    Check(boundEnv.Current.X == 99, "The direct touch-pointer path must respect display bounds");
+    boundTime=.02;boundTouch.Read(new TouchReport([Point(0,109,100)]));
+    Check(boundEnv.Current.X < 99, "Touch must immediately move inward from an edge");
+}
+boundEnv.Current=new(98,50);boundTime=0;
+int previousDragEnds=boundSink.DragEnds;
+using (var boundDrag = new TrackpadRelativeMode { Pointer=boundPointer,Clicker=boundSink,BoundsOverride=boundEnv,
+    Sensitivity=new(20),ClockSeconds=()=>boundTime })
+{
+    boundDrag.Read(new TouchReport([Point(0,100,100)]));boundTime=.05;boundDrag.Read(new TouchReport([]));
+    boundTime=.1;boundDrag.Read(new TouchReport([Point(0,100,100)]));
+    boundTime=.12;boundDrag.Read(new TouchReport([Point(0,130,100)]));
+    Check(boundEnv.Current.X == 99 && boundSink.LastDragDelta.X <= 1,
+        "Tap-and-drag must use the same clipped movement as pen and touch");
+    boundTime=.15;boundDrag.Read(new TouchReport([]));
+    Check(boundSink.DragEnds == previousDragEnds+1, "Clipping must not swallow touch-drag release");
+}
+
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 
 sealed class TouchReport(TouchPoint[] points) : ITouchReport
@@ -995,7 +1073,8 @@ sealed class RecordingPointer : IRelativePointer, IMouseScrollHandler, ISynchron
     public int Moves;
     public int Scrolls;
     public Vector2 LastPosition;
-    public void SetPosition(Vector2 delta) { Moves++; LastPosition = delta; }
+    public Action<Vector2> AfterMove;
+    public void SetPosition(Vector2 delta) { Moves++; LastPosition = delta; AfterMove?.Invoke(delta); }
     public void ScrollVertically(int amount) => Scrolls++;
     public void ScrollHorizontally(int amount) => Scrolls++;
     public Action AfterFlush;
@@ -1028,7 +1107,9 @@ sealed class RecordingClicker : ITouchClicker
     public void Magnify(float amount, MagnifyPhase phase) => Magnifications.Add(phase);
     public void Click(TapButton button, double now) => Buttons.Add(button);
     public void BeginDrag(double now) => DragStarts++;
-    public void MoveDrag(Vector2 delta) => DragMoves++;
+    public Action<Vector2> AfterDragMove;
+    public Vector2 LastDragDelta;
+    public void MoveDrag(Vector2 delta) { DragMoves++;LastDragDelta=delta;AfterDragMove?.Invoke(delta); }
     public void EndDrag() => DragEnds++;
 }
 
@@ -1058,3 +1139,18 @@ sealed class ToolReport(bool eraser) : IEraserReport {
     public byte[] Raw { get; set; } = [];
     public bool Eraser { get; set; } = eraser;
 }
+
+sealed class SimulatedCursorBounds : ICursorBounds {
+    public CursorPoint Current;
+    public CursorDisplay[] Displays=[];
+    public Vector2 LimitDelta(Vector2 delta)=>CursorBounds.Delta(Current,delta,Displays);
+    public CursorPoint LimitPoint(CursorPoint point)=>CursorBounds.Clamp(point,Displays);
+    public void Move(Vector2 delta)=>Current=new(Current.X+delta.X,Current.Y+delta.Y);
+}
+
+public class VirtualPointerFixture : IRelativePointer {
+    public VirtualPointerFixture() { }
+    public void SetPosition(Vector2 delta)=>SetPendingPosition(new IntPtr(42),delta.X,delta.Y);
+    protected virtual void SetPendingPosition(IntPtr ev,float x,float y)=>throw new Exception("Native fixture writer was not overridden");
+}
+public sealed class UnsupportedPointerFixture : IRelativePointer { public void SetPosition(Vector2 delta){} }
