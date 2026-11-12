@@ -205,20 +205,26 @@ switches, all off by default. This release remains macOS-only; the pure gesture
 recognizers are portable C#, but native output, app launching, Accessibility
 integration and the SwiftUI companion require a Windows implementation.
 
-- **Eraser drag:** select text with the pen's eraser end, then lift. After
-  mouse-up, Backspace is sent only if Accessibility exposes a non-empty selected
-  text range or string in an editable field in the same focused app. Read-only
-  text, including sent chat messages, is skipped. A timely proximity-loss report
-  can also finish an eraser drag when no final zero-pressure packet arrives. Unsupported selections, taps and window dragging
-  are skipped. Eraser tool identity is remembered across the separate
-  Wacom tool and pressure reports; eraser contact cannot arm tip clipboard actions.
-- **Right flick:** strong pressure held for 40 ms arms a 650 ms window. Move
+- **Delete after eraser contact:** touch or drag with the eraser end, then lift
+  to send one ordinary Mac Delete (Backspace, key 51). There is no selection,
+  editability or text-field-focus query: selected text is deleted, or the preceding
+  character may be deleted when there is no selection. Other apps apply their
+  normal Delete behavior. Hover never triggers it. Contact must reach 1% sensor
+  pressure and last 30 ms; stale input, side buttons, tool changes and disabling
+  cancel it. A timely proximity-loss report can finish a contact without a final
+  zero-pressure packet. The new setting defaults off and does not inherit the
+  former guarded eraser setting. Eraser contact cannot arm tip clipboard actions.
+- **Right flick:** strong pressure held for 40 ms arms the gesture. Holding that
+  pressure keeps it ready until the flick begins; after easing pressure the
+  response window is 650 ms. Move
   quickly right while changing tilt to send Command+Z. The default requirements
   are 65% pressure, 6 mm horizontal travel, 100 mm/s average motion speed and a
   tilt-vector change of 12% of the raw sensor range. Travel must dominate vertical
-  movement and finish within 180 ms of starting. Each threshold is adjustable;
+  movement and finish within 180 ms of starting fast horizontal motion. Slow
+  squeeze drift does not start that timer. Each threshold is adjustable;
   tilt units are sensor fractions, not degrees. Directions refer to the physical
-  tablet. Devices without tilt reports cannot trigger the action.
+  tablet, with an optional **Reverse flick directions** switch. Devices without
+  tilt reports cannot trigger the action.
 - **Left flick:** opens the selected desktop app or HTTPS page in the default
   browser. Presets are ChatGPT/Codex (`com.openai.codex`), ChatGPT
   (`com.openai.chat`), Claude, ChatGPT in browser and Claude in browser. The
@@ -226,18 +232,10 @@ integration and the SwiftUI companion require a Windows implementation.
   the gesture.
 
 AI opening does not read or transfer selected text, inspect the AI composer,
-or change the clipboard. Undo and AI opening obtain the foreground app through
-NSWorkspace; they do not depend on Accessibility text-field focus. Only eraser
-deletion requires Accessibility selection support. It tries the foreground
-application's focused element, then system focus, with a bounded messaging
-timeout. If focus is unavailable, it requests the app's `AXManualAccessibility`
-attribute using the [documented Electron integration](https://github.com/electron/electron/blob/main/docs/tutorial/accessibility.md),
-then retries up to three times at 100 ms intervals. This changes no macOS
-permissions; unsupported attributes and missing OS access do not trigger a retry.
-Each attempt rechecks the foreground app, action generation, selection and
-editable-value support before Delete. Empty/read-only selections are skipped,
-and switching apps or unloading cancels pending attempts. The first eraser
-gesture may serve as a renderer accessibility warm-up in some apps.
+or change the clipboard. Native actions use NSWorkspace foreground-app identity
+and ordinary shortcuts/open targets. There is no Accessibility text inspection,
+renderer-tree activation or selection retry path. The companion removes the
+obsolete selection-transfer and guarded-eraser settings on save.
 
 Recognized flicks release the pen tip before dispatching the action, suppress
 additional tip events until physical release, and cancel competing copy/paste.
@@ -246,7 +244,11 @@ Already recognized commands can finish after the pen leaves proximity; unloading
 cancels pending native work. The foreground app is checked again before delayed
 shortcuts. Debug diagnostics record recognition, skipped-action reasons and
 contact pressure/tilt summaries, without selection text or clipboard content.
-Hardware behavior and eraser selection support need an app-specific trial.
+Hardware behavior and application shortcut handling still need a manual trial.
+A local replay of ten recorded deliberate flicks recognized all ten in the actual
+filtered C# output mode after fixing premature timers; the recorded light control
+movements did not trigger flicks. That is one recording, not a guarantee against
+false gestures during other real-world use.
 
 ### Touch recovery
 

@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace PthTouch;
 
-public enum PenGestureAction { None, DeleteSelection, Undo, OpenAI }
+public enum PenGestureAction { None, Delete, Undo, OpenAI }
 public readonly record struct FlickUpdate(PenGestureAction Action = PenGestureAction.None, bool JustArmed = false);
 
 public sealed class PressureFlickGesture
@@ -16,7 +16,7 @@ public sealed class PressureFlickGesture
     public void Reset() { highSince = motionSince = null; armed = blocked = hasPrevious = false; }
     public FlickUpdate Update(Vector2 mm, Vector2? tilt, float pressure, bool cancel, double now,
         bool undoEnabled, bool aiEnabled, float pressureThreshold = .65f,
-        float distanceMm = 6, float speedMmPerSecond = 100, float tiltChange = .12f)
+        float distanceMm = 6, float speedMmPerSecond = 100, float tiltChange = .12f, bool reverse = false)
     {
         if ((!undoEnabled && !aiEnabled) || cancel || tilt is not Vector2 angle ||
             !float.IsFinite(mm.X) || !float.IsFinite(mm.Y) || !float.IsFinite(angle.X) ||
@@ -25,6 +25,7 @@ public sealed class PressureFlickGesture
         if (blocked) { if (pressure <= .1f) Reset(); return default; }
         if (hasPrevious && (now < previousTime || now - previousTime > .25))
         { Reset(); blocked = pressure > .1f; return default; }
+        double stepSeconds = hasPrevious ? now - previousTime : 0;
         previousTime = now; hasPrevious = true;
         pressureThreshold = float.IsFinite(pressureThreshold) ? Math.Clamp(pressureThreshold, .3f, .95f) : .65f;
         if (!armed)
@@ -36,9 +37,15 @@ public sealed class PressureFlickGesture
             motionSince = null;
             return new(JustArmed: true);
         }
+        // Squeezing in preparation must not consume the response window.
+        // Keep it fresh while pressure is held and motion has not started.
+        if (pressure >= pressureThreshold && motionSince is null) armedAt = now;
         if (now - armedAt > .65)
         { Reset(); blocked = pressure > .1f; return default; }
-        if (motionSince is null && Vector2.Distance(mm, origin) > 1)
+        float minimumSpeed = float.IsFinite(speedMmPerSecond) ? Math.Clamp(speedMmPerSecond, 30, 1000) : 100;
+        Vector2 frame = mm - previousPosition;
+        bool fastStart = MathF.Abs(frame.X) / MathF.Max((float)stepSeconds, .002f) >= minimumSpeed;
+        if (motionSince is null && Vector2.Distance(mm, origin) > 1 && fastStart)
         { motionSince = now; motionOrigin = previousPosition; }
         previousPosition = mm;
         if (motionSince is not double motionStart) return default;
@@ -48,11 +55,10 @@ public sealed class PressureFlickGesture
         float travel = MathF.Abs(delta.X);
         float minimum = float.IsFinite(distanceMm) ? Math.Clamp(distanceMm, 2, 30) : 6;
         float speed = travel / MathF.Max((float)(now - motionStart), .005f);
-        float minimumSpeed = float.IsFinite(speedMmPerSecond) ? Math.Clamp(speedMmPerSecond, 30, 1000) : 100;
         float minimumTilt = float.IsFinite(tiltChange) ? Math.Clamp(tiltChange, .02f, 1) : .12f;
         if (travel < minimum || travel < MathF.Abs(delta.Y) * 1.5f || speed < minimumSpeed ||
             Vector2.Distance(angle, originTilt) < minimumTilt) return default;
-        var action = delta.X > 0 ? (undoEnabled ? PenGestureAction.Undo : PenGestureAction.None)
+        var action = (delta.X > 0) != reverse ? (undoEnabled ? PenGestureAction.Undo : PenGestureAction.None)
             : (aiEnabled ? PenGestureAction.OpenAI : PenGestureAction.None);
         Reset(); blocked = true;
         return new(action);

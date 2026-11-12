@@ -841,23 +841,27 @@ Check(dictationSink.DictationCalls == 3 && dictationSink.DictationEnds == 3,
     "Unloading or replacing a mode must never leave the synthetic Fn modifier held");
 
 // Physical-tool identity is separate from pressure reports on Intuos Pro.
-var erase = new EraserSelectionGesture();
-bool Erase(double t, float x, float p, bool eraser = true, bool buttons = false) =>
-    erase.Update(new(x, 0), p, eraser, buttons, t, true, 1.5f);
-Erase(0, 0, .2f); Erase(.03, 3, .2f);
-Check(Erase(.05, 100, 0), "Eraser selection must run only on lift, ignoring lift-coordinate drift");
-Check(!Erase(.06, 100, 0), "Eraser lift must delete only once");
-Erase(1, 0, .2f); Check(!Erase(1.05, 0, 0), "Stationary eraser taps must not delete");
-Erase(2, 0, .2f); Erase(2.04, 3, .2f); Erase(2.05, 3, .2f, buttons: true);
-Check(!Erase(2.08, 3, 0), "Side buttons must cancel eraser deletion");
-Erase(3, 0, .2f); Erase(3.04, 3, .2f);
-Check(!Erase(3.4, 3, 0), "Lost reports must not delete a stale selection");
-Erase(4, 0, .2f); Erase(4.04, 3, .2f);
-Check(!Erase(4.06, 3, 0, eraser: false), "Switching to the tip must cancel eraser deletion");
+var erase = new EraserContactGesture();
+bool Erase(double t, float p, bool eraser = true, bool buttons = false, bool enabled = true) =>
+    erase.Update(p, eraser, buttons, t, enabled);
+Check(!Erase(0, 0) && !Erase(.05, 0), "Eraser hover must never send Delete");
+Erase(.1, .2f);
+Check(Erase(.15, 0), "A stationary eraser tap must send Delete after lift without a drag/selection check");
+Check(!Erase(.16, 0), "One physical contact must send only one Delete");
+Erase(1, .2f); Check(!Erase(1.01, 0), "A very short pressure spike must not send Delete");
+Erase(2, .005f); Check(!Erase(2.05, 0), "Sub-contact sensor noise must not arm Delete");
+Erase(3, .2f); Erase(3.05, .2f, buttons: true); Erase(3.1, .2f);
+Check(!Erase(3.15, 0), "Side-button cancellation must last until contact lifts");
+Erase(4, .2f); Check(!Erase(4.05, 0, eraser: false), "Switching back to the tip must cancel Delete");
+Erase(5, .2f); Check(!Erase(5.4, 0), "A stale stream must not delete on a delayed release");
+Erase(6, .2f); Check(!Erase(6.05, 0, enabled: false), "Disabling eraser Delete must discard the contact");
+Erase(7, .2f); Check(!Erase(6.99, 0), "A backwards clock must cancel eraser Delete");
+Erase(8, .2f);
+Check(!Erase(8.05, .3f) && !Erase(8.10, .4f) && Erase(8.15, 0), "A held/moving eraser sends Delete only on release");
 
 var flickEngine = new PressureFlickGesture();
-FlickUpdate Flick(double t, float x, float tilt = 0, float pressure = .8f, bool cancel = false, float y = 0) =>
-    flickEngine.Update(new(x, y), new Vector2(tilt, 0), pressure, cancel, t, true, true);
+FlickUpdate Flick(double t, float x, float tilt = 0, float pressure = .8f, bool cancel = false, float y = 0, bool reverse = false) =>
+    flickEngine.Update(new(x, y), new Vector2(tilt, 0), pressure, cancel, t, true, true, reverse: reverse);
 Check(Flick(0, 0) == default, "Flick arming needs sustained pressure");
 Check(Flick(.045, 0).JustArmed, "Sustained pressure must arm the flick");
 Check(!Flick(.055, 2, .1f).JustArmed, "Flick motion must not arm the same gesture again");
@@ -876,8 +880,21 @@ Check(Flick(4.4, 10, .3f).Action == PenGestureAction.None, "A report gap must ca
 flickEngine.Reset(); Flick(5, 0); Flick(5.05, 0); Flick(5.06, 2, .2f, cancel: true);
 Check(Flick(5.08, 10, .3f).Action == PenGestureAction.None, "Side buttons and tool changes must cancel flicks");
 flickEngine.Reset(); Flick(6, 0); Flick(6.05, 0);
-for (int i = 1; i < 8; i++) Flick(6.05 + i * .1, 0);
+for (int i = 1; i < 8; i++) Flick(6.05 + i * .1, 0, pressure: .2f);
 Check(Flick(6.79, 10, .3f).Action == PenGestureAction.None, "An expired arming window must not execute later");
+flickEngine.Reset(); Flick(10, 0);
+for (int i = 1; i <= 20; i++) Flick(10 + i * .1, 0);
+Flick(12.01, 2, .1f);
+Check(Flick(12.04, 8, .2f).Action == PenGestureAction.Undo,
+    "Preparing a flick with a long firm hold must not consume its response window");
+flickEngine.Reset(); Flick(13, 0); Flick(13.05, 0);
+for (int i = 1; i <= 12; i++) Flick(13.05 + i * .1, i * .15f);
+Flick(14.26, 4, .1f);
+Check(Flick(14.29, 10, .2f).Action == PenGestureAction.Undo,
+    "Slow squeeze drift must not start/expire the fast flick motion window");
+flickEngine.Reset(); Flick(15, 0, reverse: true); Flick(15.05, 0, reverse: true); Flick(15.06, 2, .1f, reverse: true);
+Check(Flick(15.09, 8, .2f, reverse: true).Action == PenGestureAction.OpenAI,
+    "The optional direction switch must reverse only the flick mapping");
 Check(flickEngine.Update(Vector2.Zero, null, 1, false, 8, true, true) == default,
     "Devices without tilt reports must not guess flick gestures");
 Check(MacPenActions.ResolveTarget("ChatGPT in browser").Url == "https://chatgpt.com/" &&
@@ -891,7 +908,7 @@ var extraPointer = new RecordingPointer { AfterFlush = () => extraEvents.Add("fl
 double extraTime = 0;
 var extraMode = new TrackpadRelativeMode { Pointer = extraPointer, Clicker = extraSink,
     Sensitivity = new(20), ResetTime = TimeSpan.FromMilliseconds(100), ClockSeconds = () => extraTime,
-    EraserDeletesSelection = true, PressureCopySelection = true, PressureDoublePaste = true,
+    EraserDeleteAfterContact = true, PressureCopySelection = true, PressureDoublePaste = true,
     RightFlickUndo = true, LeftFlickAI = true,
     Elements = [new ReleaseMarker(extraEvents)] };
 void Extra(double t, float x, uint pressure, float tilt = 0) {
@@ -901,14 +918,14 @@ void Extra(double t, float x, uint pressure, float tilt = 0) {
 extraMode.Read(new ToolReport(true));
 Extra(0, 1000, 409); Extra(.05, 1800, 409); Extra(.1, 1800, 1600);
 Extra(.15, 1800, 1600); Extra(.18, 1800, 0);
-Check(extraSink.PenActions.SequenceEqual([PenGestureAction.DeleteSelection]) && extraSink.ClipboardActions.Count == 0,
+Check(extraSink.PenActions.SequenceEqual([PenGestureAction.Delete]) && extraSink.ClipboardActions.Count == 0,
     "Separate eraser identity must reach ordinary pen packets and exclude tip clipboard gestures");
-Check(extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "DeleteSelection"]),
+Check(extraEvents.TakeLast(3).SequenceEqual(["release", "flush", "Delete"]),
     "Eraser deletion must follow native mouse-up and flush");
 extraMode.Read(new ToolReport(true)); Extra(.3, 1000, 409); Extra(.35, 1800, 409);
 extraTime = .38; extraMode.Read(new OutOfRangeReport());
-Check(extraSink.PenActions.Count == 2 && extraSink.PenActions.Last() == PenGestureAction.DeleteSelection &&
-    extraEvents.TakeLast(2).SequenceEqual(["flush", "DeleteSelection"]),
+Check(extraSink.PenActions.Count == 2 && extraSink.PenActions.Last() == PenGestureAction.Delete &&
+    extraEvents.TakeLast(2).SequenceEqual(["flush", "Delete"]),
     "An eraser leaving range without a zero-pressure packet must finalize only after mouse reset/flush");
 extraMode.Read(new ToolReport(true)); Extra(.5, 1000, 409); Extra(.55, 1800, 409);
 extraTime = .9; extraMode.Read(new OutOfRangeReport());
@@ -926,34 +943,6 @@ Check(extraSink.PenActions.Last() == PenGestureAction.OpenAI && extraSink.Clipbo
     "The AI flick must open its target without a clipboard action");
 extraMode.Dispose();
 Check(extraSink.PenCancels > 0, "Unloading must cancel delayed native actions");
-
-// Reproduce the native failure without querying apps or posting input: only
-// absent focus can request a renderer-tree warm-up; empty/read-only fields skip.
-int retryRequests = 0, retryDelays = 0;
-async Task<EraserDeleteResult> Retry(params EraserDeleteResult[] outcomes)
-{
-    retryRequests = retryDelays = 0;
-    var sequence = new Queue<EraserDeleteResult>(outcomes);
-    return await EraserDeleteRetry.RunAsync(() => sequence.Dequeue(),
-        () => { retryRequests++; return true; },
-        () => { retryDelays++; return Task.CompletedTask; });
-}
-Check(await Retry(EraserDeleteResult.NoFocus, EraserDeleteResult.Deleted) == EraserDeleteResult.Deleted &&
-    retryRequests == 1 && retryDelays == 1, "Lazy renderer focus must receive one accessibility request and a bounded retry");
-Check(await Retry(EraserDeleteResult.NotEditable) == EraserDeleteResult.NotEditable && retryRequests == 0 && retryDelays == 0,
-    "Read-only text must not trigger an accessibility retry or unconditional Delete");
-Check(await Retry(EraserDeleteResult.NoSelection) == EraserDeleteResult.NoSelection && retryRequests == 0,
-    "An empty selection must never turn into Delete after a warm-up");
-Check(await Retry(EraserDeleteResult.NoFocus, EraserDeleteResult.NoFocus, EraserDeleteResult.NoFocus, EraserDeleteResult.NoFocus) == EraserDeleteResult.NoFocus &&
-    retryRequests == 1 && retryDelays == 3, "Persistently missing focus must stop after three retries");
-Check(await Retry(EraserDeleteResult.NoFocus, EraserDeleteResult.Cancelled) == EraserDeleteResult.Cancelled && retryDelays == 1,
-    "App change or unload must cancel a delayed delete attempt");
-Check(await Retry(EraserDeleteResult.NoAccess) == EraserDeleteResult.NoAccess && retryRequests == 0,
-    "Missing OS access must not request a renderer-tree change");
-int unsupportedDelays = 0;
-Check(await EraserDeleteRetry.RunAsync(() => EraserDeleteResult.NoFocus, () => false,
-    () => { unsupportedDelays++; return Task.CompletedTask; }) == EraserDeleteResult.NoFocus && unsupportedDelays == 0,
-    "Unsupported manual accessibility must not keep retrying");
 
 Console.WriteLine($"Passed {checks} touch, tap, drag, pen-scroll, hover, system-gesture and pointer-output checks.");
 

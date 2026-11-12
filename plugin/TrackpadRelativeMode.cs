@@ -44,21 +44,22 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     private bool pendingDictation, previousDictationContact, dictationHolding, dictationTipSuppressed;
     private Vector2? dictationAnchor, pressurePasteAnchor;
 
-    private readonly EraserSelectionGesture eraserSelection = new();
+    private readonly EraserContactGesture eraserContact = new();
     private readonly PressureFlickGesture pressureFlick = new();
     private bool eraserTool, flickTipSuppressed, previousFlickSuppressed;
     private Vector2? flickAnchor;
     private PenGestureAction pendingPenAction;
-    private Vector2? lastPhysicalPenPosition;
     private float contactPeak;
     private Vector2? contactTiltMin, contactTiltMax;
 
-    [BooleanProperty("Erase selected text after an eraser drag", ""), DefaultPropertyValue(false)]
-    public bool EraserDeletesSelection { get; set; }
+    [BooleanProperty("Delete after lifting the eraser", ""), DefaultPropertyValue(false)]
+    public bool EraserDeleteAfterContact { get; set; }
     [BooleanProperty("Strong-pressure right flick = undo", ""), DefaultPropertyValue(false)]
     public bool RightFlickUndo { get; set; }
     [BooleanProperty("Strong-pressure left flick = open AI", ""), DefaultPropertyValue(false)]
     public bool LeftFlickAI { get; set; }
+    [BooleanProperty("Reverse flick directions", ""), DefaultPropertyValue(false)]
+    public bool ReverseFlickDirections { get; set; }
     [Property("Flick pressure threshold"), DefaultPropertyValue(65f), Unit("%")]
     public float FlickPressurePercent { get; set; } = 65;
     [Property("Flick minimum travel"), DefaultPropertyValue(6f), Unit("mm")]
@@ -210,15 +211,12 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             }
             if (deviceReport is OutOfRangeReport)
             {
-                bool eraserLift = lastPhysicalPenPosition is Vector2 physical &&
-                    eraserSelection.Update(physical, 0, eraserTool, false, now,
-                        EraserDeletesSelection, PressureDragDistanceMm);
+                bool eraserLift = eraserContact.Update(0, eraserTool, false, now, EraserDeleteAfterContact);
                 EndContactDiagnostic();
                 penUntil = 0;
                 eraserTool = false;
                 ResetPenGestures(cancelActions: false);
-                lastPhysicalPenPosition = null;
-                if (eraserLift) pendingPenAction = PenGestureAction.DeleteSelection;
+                if (eraserLift) pendingPenAction = PenGestureAction.Delete;
                 reanchorPen = true;
                 lastPenPosition = null;
                 upperPenButton = false;
@@ -274,8 +272,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 bool other = pen.PenButtons.Length > 0 && pen.PenButtons[0];
                 float normalPressure = maximumPressure > 0 ? pen.Pressure / maximumPressure : 0;
                 Vector2 physicalPosition = pen.Position * mmPerUnit;
-                lastPhysicalPenPosition = physicalPosition;
-                if (normalPressure > 0 && (RightFlickUndo || LeftFlickAI || EraserDeletesSelection))
+                if (normalPressure > 0 && (RightFlickUndo || LeftFlickAI || EraserDeleteAfterContact))
                 {
                     contactPeak = MathF.Max(contactPeak, normalPressure);
                     if (deviceReport is ITiltReport rawTilt)
@@ -285,14 +282,14 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                     }
                 }
                 else if (normalPressure <= 0) EndContactDiagnostic();
-                if (eraserSelection.Update(physicalPosition, normalPressure, eraserTool,
-                    pen.PenButtons.Any(x => x), now, EraserDeletesSelection, PressureDragDistanceMm))
-                    pendingPenAction = PenGestureAction.DeleteSelection;
+                if (eraserContact.Update(normalPressure, eraserTool,
+                    pen.PenButtons.Any(x => x), now, EraserDeleteAfterContact))
+                    pendingPenAction = PenGestureAction.Delete;
                 var flick = pressureFlick.Update(physicalPosition,
                     deviceReport is ITiltReport tilt ? tilt.Tilt / 64f : null,
                     normalPressure, !validPressure || pen.PenButtons.Any(x => x), now,
                     RightFlickUndo, LeftFlickAI, FlickPressurePercent / 100,
-                    FlickDistanceMm, FlickSpeed, FlickTiltPercent / 100);
+                    FlickDistanceMm, FlickSpeed, FlickTiltPercent / 100, ReverseFlickDirections);
                 if (flick.JustArmed) Log.Write("PTH Gestures", "Pressure flick armed.", LogLevel.Debug);
                 if (!tipWasDown) flickTipSuppressed = false;
                 if (flick.Action != PenGestureAction.None)
@@ -411,7 +408,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
 
     private void ResetPenGestures(bool cancelActions = true)
     {
-        eraserSelection.Reset(); pressureFlick.Reset();
+        eraserContact.Reset(); pressureFlick.Reset();
         flickTipSuppressed = previousFlickSuppressed = false;
         flickAnchor = null; pendingPenAction = default;
         if (cancelActions) Clicker.CancelPenActions();

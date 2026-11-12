@@ -138,11 +138,12 @@ struct SettingsView: View {
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Section("Eraser and flick gestures (experimental)") {
-                        Toggle("Eraser drag deletes selected text", isOn: $model.values.eraserDelete)
-                        Text("Select text with the eraser end and lift. Deletes only an editable text selection exposed through Accessibility. Sent chat messages and other read-only text are skipped; Electron apps may need one warm-up gesture.")
+                        Toggle("Send Delete after lifting the eraser", isOn: $model.values.eraserDelete)
+                        Text("Touch or drag with the eraser end, then lift to send one normal Mac Delete (Backspace). No selection check: selected text is deleted; otherwise the preceding character may be deleted. Hover alone does nothing. Other apps handle Delete normally. Off by default.")
                             .font(.caption).foregroundColor(.secondary)
                         Toggle("Strong pressure + right flick = Undo", isOn: $model.values.rightFlick)
                         Toggle("Strong pressure + left flick = open AI", isOn: $model.values.leftFlick)
+                        Toggle("Reverse flick directions", isOn: $model.values.reverseFlick)
                         Picker("AI target", selection: $model.values.aiTarget) {
                             ForEach(PthPreferences.aiTargets, id: \.self) { Text($0).tag($0) }
                         }.disabled(!model.values.leftFlick)
@@ -150,7 +151,7 @@ struct SettingsView: View {
                         number("Minimum flick travel", value: $model.values.flickDistance, unit: "mm")
                         number("Minimum flick speed", value: $model.values.flickSpeed, unit: "mm/s")
                         number("Minimum tilt change", value: $model.values.flickTilt, unit: "%")
-                        Text("Press firmly for a moment, then flick within 0.65 s, changing pen tilt. Directions follow the physical tablet. Right sends ⌘Z. Left opens the chosen app or browser page. AI opening does not read or transfer selected text and does not change the clipboard. The chosen desktop app must be installed; browser targets use your default browser. Tilt is a fraction of the sensor range, not degrees.")
+                        Text("Press firmly, then flick while changing pen tilt. Holding firm pressure keeps the gesture ready; after easing pressure, the response window is 0.65 s. Directions follow the physical tablet; reverse them above if needed. Right sends ⌘Z. Left opens the chosen app or browser page. AI opening does not read or transfer selected text and does not change the clipboard. The chosen desktop app must be installed; browser targets use your default browser. Tilt is a fraction of the sensor range, not degrees.")
                             .font(.caption).foregroundColor(.secondary)
                     }
                     Section("Velocity-based sensitivity (optional)") {

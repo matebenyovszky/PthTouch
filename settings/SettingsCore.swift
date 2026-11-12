@@ -14,7 +14,7 @@ struct PthPreferences: Equatable {
     var pressureCopy = false, pressurePaste = false
     var pressureRise = 8.0, pressureDrag = 1.5, dictationPressure = 60.0
     var pressureDictation = false, dictationTarget = "MacParakeet"
-    var eraserDelete = false, rightFlick = false, leftFlick = false
+    var eraserDelete = false, rightFlick = false, leftFlick = false, reverseFlick = false
     var flickPressure = 65.0, flickDistance = 6.0, flickSpeed = 100.0, flickTilt = 12.0
     var aiTarget = "ChatGPT/Codex"
     static let aiTargets = ["ChatGPT/Codex", "ChatGPT", "Claude", "ChatGPT in browser", "Claude in browser"]
@@ -25,7 +25,7 @@ struct PthPreferences: Equatable {
             \.xSensitivity, \.ySensitivity, \.resetMs, \.touchScroll, \.hoverDeadband, \.penScrollX, \.penScrollY, \.desktopTravel, \.joystickWidth, \.joystickHeight, \.joystickSpeedX, \.joystickSpeedY, \.joystickDeadzone, \.joystickCurve, \.edgeBoost, \.slowGain, \.fastGain, \.accelerationSpeed, \.pressureRise, \.pressureDrag, \.dictationPressure, \.flickPressure, \.flickDistance, \.flickSpeed, \.flickTilt]
         let toggles: [WritableKeyPath<PthPreferences, Bool>] = [
             \.tap, \.drag, \.natural, \.swipes, \.pinch, \.limitHover, \.rejectSpikes,
-            \.middleTap, \.penScrollInvert, \.penScrollFreeze, \.interactiveDesktop, \.joystick, \.joystickReverse, \.scrollNoise, \.penAcceleration, \.touchAcceleration, \.filterAllPen, \.pressureCopy, \.pressurePaste, \.pressureDictation, \.eraserDelete, \.rightFlick, \.leftFlick]
+            \.middleTap, \.penScrollInvert, \.penScrollFreeze, \.interactiveDesktop, \.joystick, \.joystickReverse, \.scrollNoise, \.penAcceleration, \.touchAcceleration, \.filterAllPen, \.pressureCopy, \.pressurePaste, \.pressureDictation, \.eraserDelete, \.rightFlick, \.leftFlick, \.reverseFlick]
         for key in numbers where baseline[keyPath: key] != edited[keyPath: key] { result[keyPath: key] = edited[keyPath: key] }
         for key in toggles where baseline[keyPath: key] != edited[keyPath: key] { result[keyPath: key] = edited[keyPath: key] }
         if baseline.dictationTarget != edited.dictationTarget { result.dictationTarget = edited.dictationTarget }
@@ -39,7 +39,7 @@ struct PthPreferences: Equatable {
         return numbers.allSatisfy { abs($0.0 - $0.1) < 0.0001 } &&
             tap == other.tap && drag == other.drag && natural == other.natural && swipes == other.swipes &&
             pinch == other.pinch && limitHover == other.limitHover && rejectSpikes == other.rejectSpikes &&
-            eraserDelete == other.eraserDelete && rightFlick == other.rightFlick && leftFlick == other.leftFlick && aiTarget == other.aiTarget &&
+            eraserDelete == other.eraserDelete && rightFlick == other.rightFlick && leftFlick == other.leftFlick && reverseFlick == other.reverseFlick && aiTarget == other.aiTarget &&
             dictationTarget == other.dictationTarget && pressureDictation == other.pressureDictation && pressureCopy == other.pressureCopy && pressurePaste == other.pressurePaste && filterAllPen == other.filterAllPen && penAcceleration == other.penAcceleration && touchAcceleration == other.touchAcceleration && middleTap == other.middleTap && joystick == other.joystick && joystickReverse == other.joystickReverse && scrollNoise == other.scrollNoise && interactiveDesktop == other.interactiveDesktop && penScrollInvert == other.penScrollInvert && penScrollFreeze == other.penScrollFreeze
     }
 }
@@ -99,8 +99,9 @@ struct ProfileSettings {
         p.slowGain = Self.number(values["AccelerationSlowGain"], p.slowGain)
         p.fastGain = Self.number(values["AccelerationFastGain"], p.fastGain)
         p.accelerationSpeed = Self.number(values["AccelerationTransitionSpeed"], p.accelerationSpeed)
-        p.eraserDelete = values["EraserDeletesSelection"] as? Bool ?? p.eraserDelete
+        p.eraserDelete = values["EraserDeleteAfterContact"] as? Bool ?? p.eraserDelete
         p.rightFlick = values["RightFlickUndo"] as? Bool ?? p.rightFlick
+        p.reverseFlick = values["ReverseFlickDirections"] as? Bool ?? p.reverseFlick
         p.leftFlick = values["LeftFlickAI"] as? Bool ?? p.leftFlick
         p.aiTarget = values["AITarget"] as? String ?? p.aiTarget
         p.flickPressure = Self.number(values["FlickPressurePercent"], p.flickPressure)
@@ -170,7 +171,7 @@ struct ProfileSettings {
             "RejectHoverSpikes": p.rejectSpikes, "UpperButtonTapMiddleClick": p.middleTap,
             "InteractiveDesktopSwipes": p.interactiveDesktop, "DesktopSwipeDistanceMm": p.desktopTravel,
             "JoystickHalfWidthMm": p.joystickWidth, "JoystickHalfHeightMm": p.joystickHeight, "JoystickMaxSpeedX": p.joystickSpeedX, "JoystickMaxSpeedY": p.joystickSpeedY, "JoystickDeadzoneMm": p.joystickDeadzone, "JoystickExponent": p.joystickCurve,
-            "EraserDeletesSelection": p.eraserDelete, "RightFlickUndo": p.rightFlick, "LeftFlickAI": p.leftFlick,
+            "EraserDeleteAfterContact": p.eraserDelete, "RightFlickUndo": p.rightFlick, "LeftFlickAI": p.leftFlick, "ReverseFlickDirections": p.reverseFlick,
             "AITarget": p.aiTarget, "FlickPressurePercent": p.flickPressure,
             "FlickDistanceMm": p.flickDistance, "FlickSpeed": p.flickSpeed, "FlickTiltPercent": p.flickTilt,
             "PressureDictationEnabled": p.pressureDictation, "PressureDictationTarget": p.dictationTarget, "PressureDictationPercent": p.dictationPressure,
@@ -178,7 +179,7 @@ struct ProfileSettings {
             "PressureRisePercent": p.pressureRise, "PressureDragDistanceMm": p.pressureDrag,
             "FilterAllPenMovement": p.filterAllPen, "JoystickEdgeBoost": p.edgeBoost, "PenVelocityAcceleration": p.penAcceleration, "TouchVelocityAcceleration": p.touchAcceleration,
             "AccelerationSlowGain": p.slowGain, "AccelerationFastGain": p.fastGain, "AccelerationTransitionSpeed": p.accelerationSpeed,
-            "PenJoystickScrolling": p.joystick, "JoystickInvertScroll": p.joystickReverse, "FilterPenScrollNoise": p.scrollNoise]).filter { $0["Property"] as? String != "AIPasteSelection" }
+            "PenJoystickScrolling": p.joystick, "JoystickInvertScroll": p.joystickReverse, "FilterPenScrollNoise": p.scrollNoise]).filter { !["AIPasteSelection", "EraserDeletesSelection"].contains($0["Property"] as? String ?? "") }
         profile["OutputMode"] = mode
         if hasPenScroll, var bindings = profile["Bindings"] as? [String: Any],
            var buttons = bindings["PenButtons"] as? [Any], var upper = buttons[1] as? [String: Any] {
