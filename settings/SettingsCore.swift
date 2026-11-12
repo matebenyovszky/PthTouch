@@ -2,6 +2,8 @@ import Foundation
 
 struct PthPreferences: Equatable {
     var xSensitivity = 20.0, ySensitivity = 20.0, resetMs = 100.0
+    var separateTouch = false
+    var touchX = 20.0, touchY = 20.0, touchSlow = 0.9, touchFast = 1.35, touchSpeed = 150.0, hoverLimit = 0.0
     var touchScroll = 12.0, hoverDeadband = 0.0
     var tap = true, drag = true, natural = true, swipes = false, pinch = false
     var limitHover = true, rejectSpikes = false, middleTap = false, interactiveDesktop = false
@@ -20,10 +22,10 @@ struct PthPreferences: Equatable {
     func applyingChanges(from baseline: PthPreferences, to edited: PthPreferences) -> PthPreferences {
         var result = self
         let numbers: [WritableKeyPath<PthPreferences, Double>] = [
-            \.xSensitivity, \.ySensitivity, \.resetMs, \.touchScroll, \.hoverDeadband, \.penScrollX, \.penScrollY, \.desktopTravel, \.joystickWidth, \.joystickHeight, \.joystickSpeedX, \.joystickSpeedY, \.joystickDeadzone, \.joystickCurve, \.edgeBoost, \.slowGain, \.fastGain, \.accelerationSpeed, \.pressureRise, \.pressureDrag, \.dictationPressure, \.flickPressure, \.flickDistance, \.flickSpeed, \.flickTilt]
+            \.xSensitivity, \.ySensitivity, \.resetMs, \.touchScroll, \.hoverDeadband, \.penScrollX, \.penScrollY, \.desktopTravel, \.joystickWidth, \.joystickHeight, \.joystickSpeedX, \.joystickSpeedY, \.joystickDeadzone, \.joystickCurve, \.edgeBoost, \.slowGain, \.fastGain, \.accelerationSpeed, \.pressureRise, \.pressureDrag, \.dictationPressure, \.flickPressure, \.flickDistance, \.flickSpeed, \.flickTilt, \.touchX, \.touchY, \.touchSlow, \.touchFast, \.touchSpeed, \.hoverLimit]
         let toggles: [WritableKeyPath<PthPreferences, Bool>] = [
             \.tap, \.drag, \.natural, \.swipes, \.pinch, \.limitHover, \.rejectSpikes,
-            \.middleTap, \.penScrollInvert, \.penScrollFreeze, \.interactiveDesktop, \.joystick, \.joystickReverse, \.scrollNoise, \.penAcceleration, \.touchAcceleration, \.filterAllPen, \.pressureCopy, \.pressurePaste, \.pressureDictation, \.eraserDelete, \.desktopFlick, \.reverseFlick]
+            \.middleTap, \.penScrollInvert, \.penScrollFreeze, \.interactiveDesktop, \.joystick, \.joystickReverse, \.scrollNoise, \.penAcceleration, \.touchAcceleration, \.filterAllPen, \.pressureCopy, \.pressurePaste, \.pressureDictation, \.eraserDelete, \.desktopFlick, \.reverseFlick, \.separateTouch]
         for key in numbers where baseline[keyPath: key] != edited[keyPath: key] { result[keyPath: key] = edited[keyPath: key] }
         for key in toggles where baseline[keyPath: key] != edited[keyPath: key] { result[keyPath: key] = edited[keyPath: key] }
         if baseline.dictationTarget != edited.dictationTarget { result.dictationTarget = edited.dictationTarget }
@@ -32,11 +34,11 @@ struct PthPreferences: Equatable {
     func matches(_ other: PthPreferences) -> Bool {
         let numbers = [(xSensitivity, other.xSensitivity), (ySensitivity, other.ySensitivity),
             (resetMs, other.resetMs), (touchScroll, other.touchScroll), (hoverDeadband, other.hoverDeadband),
-            (penScrollX, other.penScrollX), (penScrollY, other.penScrollY), (desktopTravel, other.desktopTravel), (joystickWidth, other.joystickWidth), (joystickHeight, other.joystickHeight), (joystickSpeedX, other.joystickSpeedX), (joystickSpeedY, other.joystickSpeedY), (joystickDeadzone, other.joystickDeadzone), (joystickCurve, other.joystickCurve), (edgeBoost, other.edgeBoost), (slowGain, other.slowGain), (fastGain, other.fastGain), (accelerationSpeed, other.accelerationSpeed), (pressureRise, other.pressureRise), (pressureDrag, other.pressureDrag), (dictationPressure, other.dictationPressure), (flickPressure, other.flickPressure), (flickDistance, other.flickDistance), (flickSpeed, other.flickSpeed), (flickTilt, other.flickTilt)]
+            (penScrollX, other.penScrollX), (penScrollY, other.penScrollY), (desktopTravel, other.desktopTravel), (joystickWidth, other.joystickWidth), (joystickHeight, other.joystickHeight), (joystickSpeedX, other.joystickSpeedX), (joystickSpeedY, other.joystickSpeedY), (joystickDeadzone, other.joystickDeadzone), (joystickCurve, other.joystickCurve), (edgeBoost, other.edgeBoost), (slowGain, other.slowGain), (fastGain, other.fastGain), (accelerationSpeed, other.accelerationSpeed), (pressureRise, other.pressureRise), (pressureDrag, other.pressureDrag), (dictationPressure, other.dictationPressure), (flickPressure, other.flickPressure), (flickDistance, other.flickDistance), (flickSpeed, other.flickSpeed), (flickTilt, other.flickTilt), (touchX, other.touchX), (touchY, other.touchY), (touchSlow, other.touchSlow), (touchFast, other.touchFast), (touchSpeed, other.touchSpeed), (hoverLimit, other.hoverLimit)]
         return numbers.allSatisfy { abs($0.0 - $0.1) < 0.0001 } &&
             tap == other.tap && drag == other.drag && natural == other.natural && swipes == other.swipes &&
             pinch == other.pinch && limitHover == other.limitHover && rejectSpikes == other.rejectSpikes &&
-            eraserDelete == other.eraserDelete && desktopFlick == other.desktopFlick && reverseFlick == other.reverseFlick &&
+            separateTouch == other.separateTouch && eraserDelete == other.eraserDelete && desktopFlick == other.desktopFlick && reverseFlick == other.reverseFlick &&
             dictationTarget == other.dictationTarget && pressureDictation == other.pressureDictation && pressureCopy == other.pressureCopy && pressurePaste == other.pressurePaste && filterAllPen == other.filterAllPen && penAcceleration == other.penAcceleration && touchAcceleration == other.touchAcceleration && middleTap == other.middleTap && joystick == other.joystick && joystickReverse == other.joystickReverse && scrollNoise == other.scrollNoise && interactiveDesktop == other.interactiveDesktop && penScrollInvert == other.penScrollInvert && penScrollFreeze == other.penScrollFreeze
     }
 }
@@ -112,6 +114,13 @@ struct ProfileSettings {
         p.pressureDrag = Self.number(values["PressureDragDistanceMm"], p.pressureDrag)
         p.filterAllPen = values["FilterAllPenMovement"] as? Bool ?? p.filterAllPen
         p.penAcceleration = values["PenVelocityAcceleration"] as? Bool ?? p.penAcceleration
+        p.separateTouch = values["SeparateTouchSettings"] as? Bool ?? p.separateTouch
+        p.touchX = Self.number(values["TouchSensitivityX"], p.xSensitivity)
+        p.touchY = Self.number(values["TouchSensitivityY"], p.ySensitivity)
+        p.touchSlow = Self.number(values["TouchSlowGain"], p.slowGain)
+        p.touchFast = Self.number(values["TouchFastGain"], p.fastGain)
+        p.touchSpeed = Self.number(values["TouchAccelerationSpeed"], p.accelerationSpeed)
+        p.hoverLimit = Self.number(values["HoverDistanceLimit"], p.hoverLimit)
         p.touchAcceleration = values["TouchVelocityAcceleration"] as? Bool ?? p.touchAcceleration
         p.joystick = values["PenJoystickScrolling"] as? Bool ?? p.joystick
         p.joystickReverse = values["JoystickInvertScroll"] as? Bool ?? p.joystickReverse
@@ -129,13 +138,16 @@ struct ProfileSettings {
     func merging(_ p: PthPreferences) throws -> [String: Any] {
         for (value, low, high) in [(p.xSensitivity, 0.1, 200.0), (p.ySensitivity, 0.1, 200.0),
             (p.resetMs, 1.0, 5000.0), (p.touchScroll, 0.1, 100.0), (p.hoverDeadband, 0.0, 1.0),
-            (p.penScrollX, 0.0, 100.0), (p.penScrollY, 0.0, 100.0), (p.desktopTravel, 20.0, 160.0), (p.joystickWidth, 1.0, 100.0), (p.joystickHeight, 1.0, 100.0), (p.joystickSpeedX, 0.0, 100000.0), (p.joystickSpeedY, 0.0, 100000.0), (p.joystickDeadzone, 0.0, 90.0), (p.joystickCurve, 1.0, 12.0), (p.edgeBoost, 1.0, 10.0), (p.slowGain, 0.2, 2.0), (p.fastGain, 0.2, 5.0), (p.accelerationSpeed, 10.0, 1000.0), (p.pressureRise, 5.0, 50.0), (p.pressureDrag, 0.5, 10.0), (p.dictationPressure, 20.0, 95.0), (p.flickPressure, 30.0, 95.0), (p.flickDistance, 2.0, 30.0), (p.flickSpeed, 30.0, 1000.0), (p.flickTilt, 2.0, 100.0)] {
+            (p.penScrollX, 0.0, 100.0), (p.penScrollY, 0.0, 100.0), (p.desktopTravel, 20.0, 160.0), (p.joystickWidth, 1.0, 100.0), (p.joystickHeight, 1.0, 100.0), (p.joystickSpeedX, 0.0, 100000.0), (p.joystickSpeedY, 0.0, 100000.0), (p.joystickDeadzone, 0.0, 90.0), (p.joystickCurve, 1.0, 12.0), (p.edgeBoost, 1.0, 10.0), (p.slowGain, 0.2, 2.0), (p.fastGain, 0.2, 5.0), (p.accelerationSpeed, 10.0, 1000.0), (p.pressureRise, 5.0, 50.0), (p.pressureDrag, 0.5, 10.0), (p.dictationPressure, 20.0, 95.0), (p.flickPressure, 30.0, 95.0), (p.flickDistance, 2.0, 30.0), (p.flickSpeed, 30.0, 1000.0), (p.flickTilt, 2.0, 100.0), (p.touchX, 0.1, 200.0), (p.touchY, 0.1, 200.0), (p.touchSlow, 0.2, 2.0), (p.touchFast, 0.2, 5.0), (p.touchSpeed, 10.0, 1000.0), (p.hoverLimit, 0.0, 63.0)] {
             guard value.isFinite && value >= low && value <= high else {
                 throw SettingsError.message("A number is outside the supported range. Check the sensitivity and stability fields.")
             }
         }
         guard ["MacParakeet", "macOS"].contains(p.dictationTarget) else {
             throw SettingsError.message("Choose MacParakeet or macOS as the dictation target.")
+        }
+        guard p.touchFast >= p.touchSlow else {
+            throw SettingsError.message("Touch fast sensitivity must be at least its slow value.")
         }
         guard p.fastGain >= p.slowGain else {
             throw SettingsError.message("Fast movement sensitivity must be at least the slow movement sensitivity.")
@@ -157,6 +169,9 @@ struct ProfileSettings {
         profile["RelativeModeSettings"] = relative
         var mode = profile["OutputMode"] as? [String: Any] ?? [:]
         mode["Settings"] = Self.updated(mode["Settings"], with: [
+            "SeparateTouchSettings": p.separateTouch, "TouchSensitivityX": p.touchX, "TouchSensitivityY": p.touchY,
+            "TouchSlowGain": p.touchSlow, "TouchFastGain": p.touchFast, "TouchAccelerationSpeed": p.touchSpeed,
+            "HoverDistanceLimit": p.hoverLimit,
             "ScrollSensitivity": p.touchScroll, "HoverJitterDeadband": p.hoverDeadband,
             "TapToClick": p.tap, "TapAndDrag": p.drag, "NaturalScrolling": p.natural,
             "ThreeFingerSwipes": p.swipes, "PinchZoom": p.pinch, "LimitUnstableHover": p.limitHover,

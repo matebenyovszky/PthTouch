@@ -46,7 +46,7 @@ silicon and Intel on macOS 13 or newer. OpenTabletDriver must already be running
 with this output mode selected. The settings window can be resized; growing it
 shows more controls, while smaller windows keep the forms scrollable.
 
-The Pen, Touch & gestures, and Stability tabs expose sensitivity, pen-scroll
+The Pen & pen gestures and Touch & gestures tabs expose sensitivity, pen-scroll
 mode/speed/direction, short-press middle clicking, tap/drag, scrolling, swipes,
 pinch, and hover/pen-scroll noise filtering. **Save & apply** reads the current driver settings,
 merges only your edited controls, backs up the previous configuration, applies
@@ -148,21 +148,35 @@ median windows never stack. It defaults to off to preserve unfiltered drawing
 behaviour for existing users. Pressure and button values continue through the
 normal pipeline; zero deadband disables coordinate filtering.
 
-## Optional velocity-based pointer sensitivity
+## Separate pen and touch cursor settings
 
-The **Pen → Velocity-based sensitivity** section has independent switches for
-pen hover and one-finger touch. Both default to off. Slow and fast multipliers
-scale the ordinary X/Y sensitivity; defaults are 0.90× and 1.35×, with full gain
-at 150 mm/s. Slow multiplier accepts 0.2–2×, fast multiplier up to 5× (at least
-the slow value), and the transition speed accepts 10–1000 mm/s.
+The companion's **Touch & gestures → Touch cursor speed** section can enable
+**Use separate touch cursor settings**. It exposes independent touch X/Y px/mm
+sensitivity and touch slow/fast acceleration gains and transition speed. Base
+sensitivity also applies while touch-dragging; velocity acceleration applies only
+to ordinary one-finger pointing. Two-finger scrolling and gesture thresholds are
+unchanged. With separate settings off (default), touch keeps following the pen's
+X/Y sensitivity and the existing shared gain settings for compatibility.
+Pen cursor/acceleration controls and all former Stability controls are together
+under **Pen & pen gestures**; the separate Stability tab has been removed.
 
-The curve is continuous and direction-preserving. Only the speed estimate is
-smoothed (8 ms time constant); coordinates are emitted immediately, with no
-queued motion or drift after stopping. The calculation uses physical mm/s,
-independent of pointer sensitivity and report rate. Pen contact, side buttons,
-touch dragging and scrolling keep fixed sensitivity. General jitter filtering
-is a separate option and can still apply during these actions. Turning both
-velocity switches off restores the original fixed-sensitivity behaviour.
+## Custom pen-hover distance cutoff
+
+**Pen & pen gestures → Pen stability → Hover distance limit** adds an optional
+cutoff for legacy Intuos V1 ten-byte pen reports. Zero (default) keeps the previous
+near/far gating. Positive values are raw sensor units from 1–63, not mm. The
+high six bits of byte9 encode distance; the low two bits belong to X/Y position
+fractions, as also decoded in the [Linux Wacom driver](https://github.com/torvalds/linux/blob/master/drivers/hid/wacom_wac.c).
+A one-unit re-entry hysteresis prevents chatter. Re-entry reanchors the pointer
+without a jump; tip contact and held buttons keep their prior behavior. This does
+not change the tablet's hardware touch/palm suppression range.
+
+A physical calibration attempt on the PTH-851 found a sustained reading of 63 at
+the desired upper hover plane. The signal was already saturated there, so a
+precise 2 mm reduction cannot be inferred. The highest stricter threshold is 62;
+it may cut hover off more than 2 mm lower. Use a measured physical plane where
+the signal is not saturated, or treat this as a configurable sensor threshold.
+Unsupported report layouts and a zero cutoff preserve prior behavior.
 
 ## Experimental pen-pressure gestures
 

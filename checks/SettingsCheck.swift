@@ -24,6 +24,8 @@ struct SettingsChecks {
         check(!document.read().eraserDelete && !document.read().desktopFlick, "The former guarded eraser setting must not silently enable unconditional Delete")
         var preferences = document.read()
         check(preferences.xSensitivity == 20 && preferences.resetMs == 100, "Load numeric values and reset time")
+        preferences.separateTouch = true; preferences.touchX = 16; preferences.touchY = 18
+        preferences.touchSlow = 0.7; preferences.touchFast = 1.4; preferences.touchSpeed = 180; preferences.hoverLimit = 62
         preferences.xSensitivity = 22; preferences.swipes = true; preferences.middleTap = true
         preferences.resetMs = 250; preferences.penScrollY = 1.25
         preferences.interactiveDesktop = true; preferences.desktopTravel = 80
@@ -60,10 +62,14 @@ struct SettingsChecks {
         do { _ = try document.merging(invalidTarget); check(false, "Reject unknown dictation shortcut") } catch { check(true, "Rejected unknown dictation shortcut") }
         var invalidFlick = preferences; invalidFlick.flickTilt = 0
         do { _ = try document.merging(invalidFlick); check(false, "Flick must require tilt change") } catch { check(true, "Rejected zero tilt threshold") }
+        var invalidTouch = preferences; invalidTouch.touchFast = 0.5
+        do { _ = try document.merging(invalidTouch); check(false, "Reject inverted touch gains") } catch { check(true, "Rejected inverted touch gains") }
+        var invalidHeight = preferences; invalidHeight.hoverLimit = 64
+        do { _ = try document.merging(invalidHeight); check(false, "Reject out-of-range height sensor cutoff") } catch { check(true, "Rejected invalid height cutoff") }
         let baseline = PthPreferences(); var external = baseline, edited = baseline
-        external.xSensitivity = 35; external.desktopTravel = 90; edited.pinch = true
+        external.xSensitivity = 35; external.desktopTravel = 90; edited.pinch = true; edited.touchX = 15
         let combined = external.applyingChanges(from: baseline, to: edited)
-        check(combined.xSensitivity == 35 && combined.desktopTravel == 90 && combined.pinch, "Merge edits with concurrent changes from the driver window")
+        check(combined.xSensitivity == 35 && combined.desktopTravel == 90 && combined.pinch && combined.touchX == 15, "Merge edits with concurrent changes from the driver window")
         do { _ = try ProfileSettings(document: ["Profiles": [other]]); check(false, "Reject incompatible mode") } catch { check(true, "Rejected incompatible mode") }
         let response = try mockRPC(error: false)
         check((response as? [String: Any])?["answer"] as? Int == 42, "Ignore notifications/unrelated responses before the matching RPC result")

@@ -169,6 +169,22 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
     [BooleanProperty("Tap and drag", ""), DefaultPropertyValue(true)]
     public bool TapAndDrag { get; set; } = true;
 
+    [BooleanProperty("Separate touch cursor settings", ""), DefaultPropertyValue(false)]
+    public bool SeparateTouchSettings { get; set; }
+    [Property("Touch X sensitivity"), DefaultPropertyValue(20f), Unit("px/mm")]
+    public float TouchSensitivityX { get; set; } = 20;
+    [Property("Touch Y sensitivity"), DefaultPropertyValue(20f), Unit("px/mm")]
+    public float TouchSensitivityY { get; set; } = 20;
+    [Property("Touch slow sensitivity multiplier"), DefaultPropertyValue(.9f)]
+    public float TouchSlowGain { get; set; } = .9f;
+    [Property("Touch fast sensitivity multiplier"), DefaultPropertyValue(1.35f)]
+    public float TouchFastGain { get; set; } = 1.35f;
+    [Property("Touch full acceleration speed"), DefaultPropertyValue(150f), Unit("mm/s")]
+    public float TouchAccelerationSpeed { get; set; } = 150;
+    [Property("Maximum hover distance (0 = tablet default)"), DefaultPropertyValue(0f), Unit("sensor units")]
+    public float HoverDistanceLimit { get; set; }
+    private readonly PenHoverHeightGate heightGate = new();
+
     [BooleanProperty("Limit unstable pen hover", ""), DefaultPropertyValue(true)]
     public bool LimitUnstableHover { get; set; } = true;
 
@@ -196,6 +212,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             if (deviceReport is IEraserReport tool && tool.Eraser != eraserTool)
             {
                 EndContactDiagnostic();
+                heightGate.Reset();
                 eraserTool = tool.Eraser;
                 Log.Write("PTH Gestures", eraserTool ? "Eraser tool entered." : "Pen tip entered.", LogLevel.Debug);
                 ResetPenGestures();
@@ -207,6 +224,7 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
             {
                 bool eraserLift = eraserContact.Update(0, eraserTool, false, now, EraserDeleteAfterContact);
                 EndContactDiagnostic();
+                heightGate.Reset();
                 penUntil = 0;
                 eraserTool = false;
                 ResetPenGestures(cancelActions: false);
@@ -241,7 +259,8 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
                 if (upperChanged) scrollDeadband.Reset();
                 upperPenButton = upper;
                 if (!upper || !PressureDictationEnabled) pendingDictation = false;
-                bool farHover = LimitUnstableHover && deviceReport is IProximityReport { NearProximity: false } &&
+                bool aboveHeight = heightGate.Update(deviceReport.Raw, LimitUnstableHover ? HoverDistanceLimit : 0, pen.Pressure);
+                bool farHover = LimitUnstableHover && (deviceReport is IProximityReport { NearProximity: false } || aboveHeight) &&
                     pen.Pressure == 0 && !pen.PenButtons.Any(x => x);
                 if (farHover || reanchorPen || scrollButtonChanged)
                     hoverDeadband.Reset();
@@ -502,8 +521,11 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         Vector2 mmPerUnit = new(
             (specs?.Width ?? 325.12f) / (specs?.MaxX ?? 4095),
             (specs?.Height ?? 203.2f) / (specs?.MaxY ?? 4095));
+        float TouchValue(float value) => float.IsFinite(value) ? Math.Clamp(value, .1f, 200) : 20;
+        Vector2 touchSensitivity = SeparateTouchSettings
+            ? new(TouchValue(TouchSensitivityX), TouchValue(TouchSensitivityY)) : Sensitivity;
         Motion action = touch.Update(contacts[..count], now, mmPerUnit,
-            Sensitivity, Math.Clamp(ScrollSensitivity, 0.1f, 100f), now < penUntil,
+            touchSensitivity, Math.Clamp(ScrollSensitivity, 0.1f, 100f), now < penUntil,
             TapAndDrag && TapToClick, Clicker.DoubleClickInterval, ThreeFingerSwipes, PinchZoom,
             InteractiveDesktopSwipes && InteractiveDesktopSupported, DesktopSwipeDistanceMm);
 
@@ -538,10 +560,12 @@ public sealed class TrackpadRelativeMode : RelativeOutputMode
         if (TapToClick && action.Tap != TapButton.None)
             Clicker.Click(action.Tap, now);
 
-        Vector2 cursor = touchAcceleration.Apply(action.Cursor, PhysicalDelta(action.Cursor), now,
+        Vector2 cursor = touchAcceleration.Apply(action.Cursor, new(touchSensitivity.X > 0 ? action.Cursor.X / touchSensitivity.X : 0, touchSensitivity.Y > 0 ? action.Cursor.Y / touchSensitivity.Y : 0), now,
             TouchVelocityAcceleration && count == 1 && now >= penUntil &&
             !touchDragging && action.Drag == DragChange.None,
-            AccelerationSlowGain, AccelerationFastGain, AccelerationTransitionSpeed);
+            SeparateTouchSettings ? TouchSlowGain : AccelerationSlowGain,
+            SeparateTouchSettings ? TouchFastGain : AccelerationFastGain,
+            SeparateTouchSettings ? TouchAccelerationSpeed : AccelerationTransitionSpeed);
         if (cursor != Vector2.Zero)
         {
             Vector2 delta = Vector2.Transform(cursor,
